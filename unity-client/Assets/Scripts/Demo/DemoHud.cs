@@ -4,6 +4,8 @@ using UnityEngine;
 [RequireComponent(typeof(DemoGame))]
 public sealed class DemoHud : MonoBehaviour
 {
+    private const int ButtonCount = 4;
+
     private DemoGame _game;
     private float _smoothedDelta = 1f / 60f;
     private GUIStyle _label;
@@ -39,10 +41,10 @@ public sealed class DemoHud : MonoBehaviour
         GUI.Label(new Rect(pad, pad, Screen.width * 0.7f, Screen.height * 0.2f), info, _label);
 
         Rect[] r = ButtonRects();
-        string boxLabel = _game.Touch.BoxMode ? "Çərçivə: AÇIQ" : "Çərçivə: BAĞLI";
-        if (GUI.Button(r[0], boxLabel, _button)) _game.Touch.BoxMode = !_game.Touch.BoxMode;
-        if (GUI.Button(r[1], "Hamısı", _button)) _game.SelectAll();
-        if (GUI.Button(r[2], "Ləğv et", _button)) _game.ClearSelection();
+        if (GUI.Button(r[0], _game.BuildOverlayVisible ? "Tikinti sahələri: AÇIQ" : "Tikinti sahələri", _button)) _game.ToggleBuildOverlay();
+        if (GUI.Button(r[1], _game.Touch.BoxMode ? "Çərçivə: AÇIQ" : "Çərçivə: BAĞLI", _button)) _game.Touch.BoxMode = !_game.Touch.BoxMode;
+        if (GUI.Button(r[2], "Hamısı", _button)) _game.SelectAll();
+        if (GUI.Button(r[3], "Ləğv et", _button)) _game.ClearSelection();
 
         if (_game.Touch.BoxRect.HasValue)
         {
@@ -59,14 +61,14 @@ public sealed class DemoHud : MonoBehaviour
     private static Rect[] ButtonRects()
     {
         float h = Screen.height * 0.11f;
-        float w = Mathf.Min(Screen.width * 0.2f, h * 3.2f);
+        float w = Mathf.Min(Screen.width * 0.19f, h * 3.6f);
         float gap = Screen.height * 0.015f;
         float y = Screen.height - h - gap;
 
-        var rects = new Rect[3];
-        for (int i = 0; i < 3; i++)
+        var rects = new Rect[ButtonCount];
+        for (int i = 0; i < ButtonCount; i++)
         {
-            float x = Screen.width - (3 - i) * (w + gap);
+            float x = Screen.width - (ButtonCount - i) * (w + gap);
             rects[i] = new Rect(x, y, w, h);
         }
         return rects;
@@ -75,9 +77,9 @@ public sealed class DemoHud : MonoBehaviour
     private void EnsureStyles()
     {
         if (_label != null) return;
-        int size = Mathf.RoundToInt(Screen.height * 0.035f);
+        int size = Mathf.RoundToInt(Screen.height * 0.032f);
         _label = new GUIStyle(GUI.skin.label) { fontSize = size };
         _label.normal.textColor = Color.white;
-        _button = new GUIStyle(GUI.skin.button) { fontSize = size };
+        _button = new GUIStyle(GUI.skin.button) { fontSize = size, wordWrap = true };
     }
 }

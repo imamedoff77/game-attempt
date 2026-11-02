@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using SimCore;
 using UnityEditor;
 using UnityEditor.Build;
 using UnityEditor.Build.Reporting;
@@ -26,8 +27,8 @@ public static class GameBuild
         {
             SetupRenderPipeline();
             ConfigureAndroid();
-            Material[] mats = CreateMaterials();
-            CreateScene(mats);
+            ReportModelBounds();
+            CreateScene();
             AssetDatabase.SaveAssets();
             Debug.Log("PREPARE_RESULT: OK");
             EditorApplication.Exit(0);
@@ -45,8 +46,7 @@ public static class GameBuild
         {
             SetupRenderPipeline();
             ConfigureAndroid();
-            Material[] mats = CreateMaterials();
-            CreateScene(mats);
+            CreateScene();
 
             Directory.CreateDirectory(Path.GetDirectoryName(ApkPath));
             var options = new BuildPlayerOptions
@@ -125,25 +125,37 @@ public static class GameBuild
         AssetDatabase.SaveAssets();
     }
 
-    /// <returns>ground, unit, accent, ring, marker</returns>
-    private static Material[] CreateMaterials()
+    // ---------------------------------------------------------------- materials
+
+    private static Material LitMaterial(string name, Color color, Texture texture = null)
     {
-        Directory.CreateDirectory("Assets/Materials");
-        return new[]
-        {
-            Mat("Ground", new Color(1f, 1f, 1f)),
-            Mat("Unit", new Color(0.20f, 0.45f, 0.85f)),
-            Mat("Accent", new Color(0.12f, 0.12f, 0.14f)),
-            Mat("SelectionRing", new Color(0.35f, 1f, 0.45f)),
-            Mat("TapMarker", new Color(1f, 0.9f, 0.3f)),
-        };
+        Material mat = LoadOrCreate(name, "Universal Render Pipeline/Lit");
+        mat.color = color;
+        mat.SetFloat("_Smoothness", 0f);
+        mat.SetFloat("_Metallic", 0f);
+        mat.SetFloat("_SpecularHighlights", 0f);
+        mat.SetFloat("_EnvironmentReflections", 0f);
+        mat.EnableKeyword("_SPECULARHIGHLIGHTS_OFF");
+        mat.EnableKeyword("_ENVIRONMENTREFLECTIONS_OFF");
+        if (texture != null) { mat.SetTexture("_BaseMap", texture); mat.mainTexture = texture; }
+        EditorUtility.SetDirty(mat);
+        return mat;
     }
 
-    private static Material Mat(string name, Color color)
+    private static Material UnlitMaterial(string name, Color color)
     {
+        Material mat = LoadOrCreate(name, "Universal Render Pipeline/Unlit");
+        mat.color = color;
+        EditorUtility.SetDirty(mat);
+        return mat;
+    }
+
+    private static Material LoadOrCreate(string name, string shaderName)
+    {
+        Directory.CreateDirectory("Assets/Materials");
         string path = $"Assets/Materials/{name}.mat";
-        Shader shader = Shader.Find("Universal Render Pipeline/Lit");
-        if (shader == null) throw new Exception("URP Lit shader not found");
+        Shader shader = Shader.Find(shaderName);
+        if (shader == null) throw new Exception("Shader not found: " + shaderName);
 
         var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
         if (mat == null)
@@ -152,25 +164,43 @@ public static class GameBuild
             AssetDatabase.CreateAsset(mat, path);
         }
         mat.shader = shader;
-        mat.color = color;
-        mat.SetFloat("_Smoothness", 0.1f);
-        mat.SetFloat("_Metallic", 0f);
-        EditorUtility.SetDirty(mat);
         return mat;
     }
 
-    private static void CreateScene(Material[] mats)
+    // ---------------------------------------------------------------- scene
+
+    private static GameObject Model(string name)
+    {
+        var go = AssetDatabase.LoadAssetAtPath<GameObject>($"Assets/Models/{name}.fbx");
+        if (go == null) throw new Exception("Model not found: " + name + " (run art/blender/generate_assets.py)");
+        return go;
+    }
+
+    private static void CreateScene()
     {
         Directory.CreateDirectory("Assets/Scenes");
+
+        var palette = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/Textures/palette.png");
+        if (palette == null) throw new Exception("palette.png not found (run art/blender/generate_assets.py)");
+
+        Material paletteMat = LitMaterial("Palette", Color.white, palette);
+        Material groundMat = LitMaterial("Ground", Color.white);
+        Material ringMat = UnlitMaterial("SelectionRing", new Color(0.35f, 1f, 0.45f));
+        Material markerMat = UnlitMaterial("TapMarker", new Color(1f, 0.9f, 0.3f));
+
+        Material overlayMat = LoadOrCreate("BuildOverlay", "Sprites/Default");
+        overlayMat.color = Color.white;
+        EditorUtility.SetDirty(overlayMat);
+
         var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
         RenderSettings.ambientMode = AmbientMode.Flat;
-        RenderSettings.ambientLight = new Color(0.55f, 0.57f, 0.62f);
+        RenderSettings.ambientLight = new Color(0.62f, 0.62f, 0.66f);
 
         var cameraGo = new GameObject("Main Camera") { tag = "MainCamera" };
         var cam = cameraGo.AddComponent<Camera>();
         cam.clearFlags = CameraClearFlags.SolidColor;
-        cam.backgroundColor = new Color(0.08f, 0.10f, 0.14f);
+        cam.backgroundColor = new Color(0.55f, 0.47f, 0.35f);
         cam.nearClipPlane = 0.3f;
         cam.farClipPlane = 200f;
         cameraGo.AddComponent<AudioListener>();
@@ -179,22 +209,71 @@ public static class GameBuild
         var lightGo = new GameObject("Directional Light");
         var light = lightGo.AddComponent<Light>();
         light.type = LightType.Directional;
-        light.intensity = 0.9f;
+        light.intensity = 0.85f;
+        light.color = new Color(1f, 0.96f, 0.88f);
         light.shadows = LightShadows.None;
-        lightGo.transform.rotation = Quaternion.Euler(50f, -30f, 0f);
+        lightGo.transform.rotation = Quaternion.Euler(52f, -35f, 0f);
 
         var game = new GameObject("Game");
         var demo = game.AddComponent<DemoGame>();
         game.AddComponent<DemoHud>();
 
         var so = new SerializedObject(demo);
-        so.FindProperty("groundMaterial").objectReferenceValue = mats[0];
-        so.FindProperty("unitMaterial").objectReferenceValue = mats[1];
-        so.FindProperty("accentMaterial").objectReferenceValue = mats[2];
-        so.FindProperty("ringMaterial").objectReferenceValue = mats[3];
-        so.FindProperty("markerMaterial").objectReferenceValue = mats[4];
+        so.FindProperty("paletteMaterial").objectReferenceValue = paletteMat;
+        so.FindProperty("groundMaterial").objectReferenceValue = groundMat;
+        so.FindProperty("overlayMaterial").objectReferenceValue = overlayMat;
+        so.FindProperty("ringMaterial").objectReferenceValue = ringMat;
+        so.FindProperty("markerMaterial").objectReferenceValue = markerMat;
+
+        // Arrays are indexed by the enum value, so the order here must match SimCore.UnitKind / BuildingKind.
+        SetObjects(so, "unitModels", new[]
+        {
+            Model("unit_rifleman"),  // UnitKind.Rifleman
+            Model("unit_rocket"),    // UnitKind.RocketTrooper
+            Model("unit_jeep"),      // UnitKind.Jeep
+            Model("unit_tank"),      // UnitKind.Tank
+        });
+        SetObjects(so, "buildingModels", new[]
+        {
+            Model("bld_hq"),         // BuildingKind.Hq
+            Model("bld_power"),      // BuildingKind.PowerPlant
+            Model("bld_supply"),     // BuildingKind.SupplyCenter
+            Model("bld_barracks"),   // BuildingKind.Barracks
+            Model("bld_factory"),    // BuildingKind.VehicleFactory
+        });
+        SetObjects(so, "rockModels", new[] { Model("prop_rock_a"), Model("prop_rock_b"), Model("prop_rock_c") });
+        so.FindProperty("palmModel").objectReferenceValue = Model("prop_palm");
+        so.FindProperty("cactusModel").objectReferenceValue = Model("prop_cactus");
+        so.FindProperty("bushModel").objectReferenceValue = Model("prop_bush");
         so.ApplyModifiedPropertiesWithoutUndo();
 
         EditorSceneManager.SaveScene(scene, ScenePath);
+    }
+
+    private static void SetObjects(SerializedObject so, string property, UnityEngine.Object[] objects)
+    {
+        SerializedProperty prop = so.FindProperty(property);
+        prop.arraySize = objects.Length;
+        for (int i = 0; i < objects.Length; i++)
+            prop.GetArrayElementAtIndex(i).objectReferenceValue = objects[i];
+    }
+
+    // ---------------------------------------------------------------- diagnostics
+
+    /// <summary>Logs each model's size in Unity space, to confirm the Blender export kept scale and orientation.</summary>
+    private static void ReportModelBounds()
+    {
+        foreach (string guid in AssetDatabase.FindAssets("t:Model", new[] { "Assets/Models" }))
+        {
+            string path = AssetDatabase.GUIDToAssetPath(guid);
+            var go = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+            Bounds b = default;
+            bool first = true;
+            foreach (Renderer r in go.GetComponentsInChildren<Renderer>())
+            {
+                if (first) { b = r.bounds; first = false; } else b.Encapsulate(r.bounds);
+            }
+            Debug.Log($"MODEL_BOUNDS {Path.GetFileNameWithoutExtension(path)}: size=({b.size.x:0.00}, {b.size.y:0.00}, {b.size.z:0.00}) center=({b.center.x:0.00}, {b.center.y:0.00}, {b.center.z:0.00})");
+        }
     }
 }

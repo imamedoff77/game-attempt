@@ -13,24 +13,21 @@ public sealed class UnitView : MonoBehaviour
 
     public int UnitId => _unit.Id;
 
-    public static UnitView Create(Unit unit, Material body, Material accent, Material ring)
+    public static UnitView Create(Unit unit, GameObject model, Material palette, Material ringMaterial)
     {
-        var root = new GameObject("Unit " + unit.Id);
+        var root = new GameObject("Unit " + unit.Id + " " + unit.Kind);
         var view = root.AddComponent<UnitView>();
         view._unit = unit;
 
-        GameObject capsule = Primitive(PrimitiveType.Capsule, root.transform, "Body", body);
-        capsule.transform.localPosition = new Vector3(0f, 0.45f, 0f);
-        capsule.transform.localScale = new Vector3(0.6f, 0.45f, 0.6f);
+        GameObject body = Instantiate(model, root.transform);
+        body.transform.localPosition = Vector3.zero;
+        body.transform.localRotation = Quaternion.identity;
+        foreach (Renderer r in body.GetComponentsInChildren<Renderer>()) r.sharedMaterial = palette;
 
-        // A small "gun" so you can see which way the unit faces.
-        GameObject gun = Primitive(PrimitiveType.Cube, root.transform, "Gun", accent);
-        gun.transform.localPosition = new Vector3(0.12f, 0.5f, 0.4f);
-        gun.transform.localScale = new Vector3(0.1f, 0.1f, 0.55f);
-
-        view._selectionRing = Primitive(PrimitiveType.Cylinder, root.transform, "SelectionRing", ring);
-        view._selectionRing.transform.localPosition = new Vector3(0f, 0.03f, 0f);
-        view._selectionRing.transform.localScale = new Vector3(1.1f, 0.01f, 1.1f);
+        float outer = Defs.Unit(unit.Kind).Class == UnitClass.Infantry ? 0.55f
+                    : unit.Kind == UnitKind.Tank ? 1.4f : 1.0f;
+        view._selectionRing = MeshFactory.Spawn("SelectionRing", MeshFactory.Ring(outer * 0.82f, outer), ringMaterial, root.transform);
+        view._selectionRing.transform.localPosition = new Vector3(0f, 0.06f, 0f);
         view._selectionRing.SetActive(false);
 
         view.Refresh(0f, false);
@@ -46,21 +43,11 @@ public sealed class UnitView : MonoBehaviour
         Vector3 moved = to - from;
         if (moved.sqrMagnitude > 1e-8f)
             _facing = Quaternion.LookRotation(moved);
-        transform.rotation = Quaternion.Slerp(transform.rotation, _facing, 1f - Mathf.Exp(-15f * Time.deltaTime));
+        transform.rotation = Quaternion.Slerp(transform.rotation, _facing, 1f - Mathf.Exp(-12f * Time.deltaTime));
 
         _selectionRing.SetActive(selected);
     }
 
     /// <summary>Sim (x, y) maps onto the Unity ground plane (x, z).</summary>
     public static Vector3 ToUnity(Vec2 p) => new Vector3(p.X.ToFloat(), 0f, p.Y.ToFloat());
-
-    private static GameObject Primitive(PrimitiveType type, Transform parent, string name, Material material)
-    {
-        GameObject go = GameObject.CreatePrimitive(type);
-        go.name = name;
-        go.transform.SetParent(parent, false);
-        Destroy(go.GetComponent<Collider>()); // picking is done on screen positions, not physics
-        go.GetComponent<Renderer>().sharedMaterial = material;
-        return go;
-    }
 }
