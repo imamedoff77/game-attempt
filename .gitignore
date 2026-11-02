@@ -34,3 +34,5 @@ backend/node_modules/
 .idea/
 .vscode/
 .DS_Store
+.build/
+unity-client/.utmp/

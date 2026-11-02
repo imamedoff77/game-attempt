@@ -1,0 +1,8 @@
+{
+  "name": "com.game.simcore",
+  "displayName": "SimCore",
+  "version": "0.1.0",
+  "unity": "6000.3",
+  "description": "Deterministic, engine-independent RTS simulation core (fixed-point, no floats).",
+  "author": { "name": "Game" }
+}

@@ -87,3 +87,14 @@ public class DeterminismTests
         Assert.Equal(Vec2.Zero, Vec2.Zero.Normalized());
     }
 }
+
+public class HashReferenceTests
+{
+    [Fact]
+    public void StateHasher_MatchesIndependentPythonReference()
+    {
+        var h = StateHasher.Create();
+        h.Add(1); h.Add(2); h.Add(3);
+        Assert.Equal(0xDA2BFB225E0D1F05UL, h.Value);
+    }
+}
