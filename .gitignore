@@ -1,0 +1,36 @@
+# .NET
+bin/
+obj/
+*.user
+TestResults/
+
+# Unity (unity-client/)
+unity-client/[Ll]ibrary/
+unity-client/[Tt]emp/
+unity-client/[Oo]bj/
+unity-client/[Bb]uild/
+unity-client/[Bb]uilds/
+unity-client/[Ll]ogs/
+unity-client/[Uu]ser[Ss]ettings/
+unity-client/[Mm]emoryCaptures/
+unity-client/.vs/
+unity-client/*.csproj
+unity-client/*.sln
+*.apk
+*.aab
+*.keystore
+*.jks
+
+# Blender backups
+*.blend1
+*.blend2
+
+# Backend
+backend/vendor/
+backend/node_modules/
+.env
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
