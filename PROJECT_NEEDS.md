@@ -100,7 +100,7 @@ Tarix: 2026-11-02 · Maşın: CachyOS Linux
 | **Laravel starter kit** | ✅ `~/PhpstormProjects/Laravel-Nuxt-Starter-Kit` | Ayrı repo kimi kopyalanacaq |
 | **PostgreSQL client** | ✅ psql 18.6 | Server işləməsi yoxlanmayıb |
 | **MySQL/MariaDB, SQLite** | ✅ | |
-| **Docker + Compose** | ⚠️ Quraşdırılıb (29.9.2 / 5.6.1), **servis başlamır** | Səbəb: işləyən kernel (7.3.0-4) yenilənib, `/lib/modules`-da yalnız 7.3.1-1 var, iptables NAT modulları yüklənmir. **Reboot ilə düzələcək.** Mərhələ 4-ə qədər vacib deyil |
+| **Docker + Compose** | ✅ 29.9.2 / 5.6.1, servis işləyir və boot-da avtomatik başlayır | Reboot-dan sonra (kernel 7.3.1-1) problem aradan qalxdı. `docker` qrupundasınız, `sudo` lazım deyil |
 
 ---
 
@@ -157,7 +157,7 @@ Tarix: 2026-11-02 · Maşın: CachyOS Linux
 - ✅ .NET SDK, Git LFS, adb, Blender quraşdırıldı
 - ✅ Git repo (`main`), `.gitignore`, `.gitattributes`
 - ✅ `sim-core/`: `Fix64` (Q31.32), `Vec2`, `DeterministicRandom` (xorshift64*), `StateHasher` (FNV-1a), 24 unit test keçir
-- ⏳ Docker: reboot gözləyir
+- ✅ Docker: reboot-dan sonra işləyir
 - ⏳ Unity Hub (AUR `unityhub 3.21.0`): PKGBUILD yoxlanıldı, təmizdir. İstifadəçi `paru -S unityhub` işlətməlidir
 - ⏳ Unity Editor LTS: Hub-dan, Unity hesabı ilə giriş tələb olunur
 - ⏳ Android cihaz: USB debugging
