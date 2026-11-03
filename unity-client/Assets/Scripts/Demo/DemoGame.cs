@@ -33,6 +33,12 @@ public sealed class DemoGame : MonoBehaviour
     private readonly SortedSet<int> _selected = new SortedSet<int>(); // sorted: commands must list ids in a fixed order
     private float _accumulator;
     private TerrainView _terrain;
+    private int _buildingViews;
+
+    // Choosing where to build
+    private BuildGhost _ghost;
+    private BuildingKind _placingKind;
+    private bool _overlayWasVisible;
 
     public World World { get; private set; }
     public RtsCamera Cam { get; private set; }
@@ -40,6 +46,11 @@ public sealed class DemoGame : MonoBehaviour
     public int SelectedCount => _selected.Count;
     public string SelfTestStatus { get; private set; }
     public bool BuildOverlayVisible => _terrain != null && _terrain.OverlayVisible;
+
+    public bool Placing => _ghost != null;
+    public BuildingKind PlacingKind => _placingKind;
+    public Vector2Int PlacingCell { get; private set; }
+    public BuildCheck PlacingCheck { get; private set; }
 
     /// <summary>1 = real time. Higher values fast-forward the simulation (for testing).</summary>
     public float SimSpeed { get; set; } = 1f;
@@ -54,12 +65,11 @@ public sealed class DemoGame : MonoBehaviour
 
         MapGrid map = DemoMap.Generate(MapSize, MapSize, MapSeed, StartCenter.x, StartCenter.y, 6);
         World = new World(map);
-        PlaceStartingBase();
+        World.PlaceBuilding(BuildingKind.Hq, 22, 21); // everything else the player builds
 
-        // Terrain and buildings
         _terrain = new GameObject("Terrain").AddComponent<TerrainView>();
         _terrain.Build(map, groundMaterial, overlayMaterial, rockModels, palmModel, cactusModel, bushModel, paletteMaterial, StartCenter, 8);
-        foreach (Building b in World.Buildings) SpawnBuildingView(b);
+        SyncBuildingViews();
 
         SpawnStartingUnits();
 
@@ -68,13 +78,13 @@ public sealed class DemoGame : MonoBehaviour
         Touch = new TouchController(Cam, this);
     }
 
-    private void PlaceStartingBase()
+    /// <summary>Creates a model for every building the simulation has that has no model yet.</summary>
+    private void SyncBuildingViews()
     {
-        World.PlaceBuilding(BuildingKind.Hq, 22, 21);
-        World.PlaceBuilding(BuildingKind.PowerPlant, 27, 21);
-        World.PlaceBuilding(BuildingKind.SupplyCenter, 30, 21);
-        World.PlaceBuilding(BuildingKind.Barracks, 21, 27);
-        World.PlaceBuilding(BuildingKind.VehicleFactory, 26, 27);
+        if (_buildingViews == World.Buildings.Count) return;
+        while (_buildingViews < World.Buildings.Count)
+            SpawnBuildingView(World.Buildings[_buildingViews++]);
+        if (_terrain.OverlayVisible) _terrain.RefreshOverlay();
     }
 
     private void SpawnBuildingView(Building b)
@@ -115,6 +125,9 @@ public sealed class DemoGame : MonoBehaviour
         }
         if (steps == 5) _accumulator = 0f; // device too slow: drop the backlog instead of spiralling
 
+        SyncBuildingViews();
+        UpdateGhost();
+
         float alpha = _accumulator / TickSeconds;
         foreach (UnitView view in _views.Values)
             view.Refresh(alpha, _selected.Contains(view.UnitId));
@@ -124,6 +137,12 @@ public sealed class DemoGame : MonoBehaviour
 
     public void Tap(Vector2 screen)
     {
+        if (Placing)
+        {
+            if (Cam.GroundPoint(screen, out Vector3 spot)) MovePlacement(spot);
+            return;
+        }
+
         int unitId = PickUnit(screen);
         if (unitId != -1)
         {
@@ -163,6 +182,55 @@ public sealed class DemoGame : MonoBehaviour
     public void ClearSelection() => _selected.Clear();
 
     public void ToggleBuildOverlay() => _terrain.SetOverlayVisible(!_terrain.OverlayVisible);
+
+    // ---- building ----
+
+    public void BeginPlacement(BuildingKind kind)
+    {
+        CancelPlacement();
+        _placingKind = kind;
+        _overlayWasVisible = _terrain.OverlayVisible;
+        _terrain.SetOverlayVisible(true);
+        _ghost = new BuildGhost(kind, buildingModels[(int)kind], paletteMaterial, overlayMaterial);
+
+        // Start in the middle of the screen.
+        if (!Cam.GroundPoint(new Vector2(Screen.width / 2f, Screen.height / 2f), out Vector3 centre))
+            centre = new Vector3(StartCenter.x, 0f, StartCenter.y);
+        MovePlacement(centre);
+    }
+
+    public void ConfirmPlacement()
+    {
+        if (!Placing || PlacingCheck != BuildCheck.Ok) return;
+        World.Enqueue(new BuildCommand(_placingKind, PlacingCell.x, PlacingCell.y));
+        EndPlacement();
+    }
+
+    public void CancelPlacement() => EndPlacement();
+
+    private void EndPlacement()
+    {
+        if (_ghost == null) return;
+        _ghost.Destroy();
+        _ghost = null;
+        _terrain.SetOverlayVisible(_overlayWasVisible);
+    }
+
+    /// <summary>Puts the building's centre on the tapped point, snapped to whole cells and kept inside the map.</summary>
+    private void MovePlacement(Vector3 ground)
+    {
+        BuildingDef def = Defs.Building(_placingKind);
+        int x = Mathf.Clamp(Mathf.RoundToInt(ground.x - def.Width / 2f), 0, MapSize - def.Width);
+        int y = Mathf.Clamp(Mathf.RoundToInt(ground.z - def.Height / 2f), 0, MapSize - def.Height);
+        PlacingCell = new Vector2Int(x, y);
+    }
+
+    private void UpdateGhost()
+    {
+        if (!Placing) return;
+        PlacingCheck = World.CheckBuild(_placingKind, PlacingCell.x, PlacingCell.y);
+        _ghost.SetCell(PlacingCell.x, PlacingCell.y, PlacingCheck == BuildCheck.Ok);
+    }
 
     // ---- internals ----
 

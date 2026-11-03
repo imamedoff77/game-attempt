@@ -9,6 +9,7 @@ namespace SimCore
     public sealed class World
     {
         public const int TicksPerSecond = 20;
+        private const int TicksPerMinute = TicksPerSecond * 60;
 
         /// <summary>Distance between units when they spread out around a move target.</summary>
         public static readonly Fix64 FormationSpacing = Fix64.One;
@@ -16,9 +17,10 @@ namespace SimCore
         private readonly List<Unit> _units = new List<Unit>();
         private readonly Dictionary<int, Unit> _unitsById = new Dictionary<int, Unit>();
         private readonly List<Building> _buildings = new List<Building>();
-        private readonly List<MoveCommand> _pending = new List<MoveCommand>();
+        private readonly List<Command> _pending = new List<Command>();
         private int _nextUnitId = 1;
         private int _nextBuildingId = 1;
+        private int _incomeProgress; // resource-ticks collected towards the next whole resource
 
         public MapGrid Map { get; }
         public Fix64 Width { get; }
@@ -27,11 +29,23 @@ namespace SimCore
         public IReadOnlyList<Unit> Units => _units;
         public IReadOnlyList<Building> Buildings => _buildings;
 
+        /// <summary>Resources in stock. Income arrives automatically (no gatherers).</summary>
+        public int Resources { get; private set; } = Economy.StartResources;
+        /// <summary>Energy the base can supply (the base itself plus power plants).</summary>
+        public int EnergyCapacity { get; private set; }
+        /// <summary>Energy the buildings need to work.</summary>
+        public int EnergyUsed { get; private set; }
+        /// <summary>True when the buildings need more energy than the base supplies; they stop working.</summary>
+        public bool EnergyShortage => EnergyUsed > EnergyCapacity;
+        /// <summary>Resources per minute at the moment.</summary>
+        public int IncomePerMinute { get; private set; }
+
         public World(MapGrid map)
         {
             Map = map;
             Width = Fix64.FromInt(map.Width);
             Height = Fix64.FromInt(map.Height);
+            UpdateEconomy();
         }
 
         /// <summary>All-sand map of the given size.</summary>
@@ -65,18 +79,65 @@ namespace SimCore
             BuildingDef def = Defs.Building(kind);
             if (!Map.CanPlace(x, y, def.Width, def.Height)) return null;
 
-            var building = new Building(_nextBuildingId++, kind, x, y, def.Width, def.Height);
+            var building = new Building(_nextBuildingId++, kind, x, y, def.Width, def.Height, NextOutput(kind));
             for (int cy = y; cy < y + def.Height; cy++)
                 for (int cx = x; cx < x + def.Width; cx++)
                     Map.SetBuilding(cx, cy, building.Id);
 
             _buildings.Add(building);
+            UpdateEconomy();
             return building;
+        }
+
+        /// <summary>Why a building can or cannot be built at a spot.</summary>
+        public BuildCheck CheckBuild(BuildingKind kind, int x, int y)
+        {
+            if (kind == BuildingKind.Hq) return BuildCheck.NotAllowed;
+            BuildingDef def = Defs.Building(kind);
+            if (!Map.CanPlace(x, y, def.Width, def.Height)) return BuildCheck.BadGround;
+            foreach (Unit u in _units)
+            {
+                int ux = u.Pos.X.ToInt(), uy = u.Pos.Y.ToInt();
+                if (ux >= x && ux < x + def.Width && uy >= y && uy < y + def.Height) return BuildCheck.UnitInWay;
+            }
+            if (Resources < def.Cost) return BuildCheck.NotEnoughResources;
+            return BuildCheck.Ok;
+        }
+
+        /// <summary>What the next building of this kind would produce: energy (power plant) or resources per minute (supply center).</summary>
+        public int NextOutput(BuildingKind kind)
+        {
+            if (kind != BuildingKind.PowerPlant && kind != BuildingKind.SupplyCenter) return 0;
+            int existing = 0;
+            foreach (Building b in _buildings) if (b.Kind == kind) existing++;
+            return Economy.Pick(kind == BuildingKind.PowerPlant ? Economy.PowerPlantOutput : Economy.SupplyCenterIncome, existing);
+        }
+
+        /// <summary>Recomputes energy balance, which buildings work, and the income.</summary>
+        private void UpdateEconomy()
+        {
+            int capacity = Economy.HqEnergy, used = 0;
+            foreach (Building b in _buildings)
+            {
+                if (b.Kind == BuildingKind.PowerPlant) capacity += b.Output;
+                used += Defs.Building(b.Kind).EnergyUse;
+            }
+            EnergyCapacity = capacity;
+            EnergyUsed = used;
+
+            int income = Economy.HqIncomePerMinute;
+            foreach (Building b in _buildings)
+            {
+                // Demo rule: in a shortage every building that needs energy stops.
+                b.Powered = !EnergyShortage || Defs.Building(b.Kind).EnergyUse == 0;
+                if (b.Kind == BuildingKind.SupplyCenter && b.Powered) income += b.Output;
+            }
+            IncomePerMinute = income;
         }
 
         public Unit GetUnit(int id) => _unitsById.TryGetValue(id, out Unit u) ? u : null;
 
-        public void Enqueue(MoveCommand command) => _pending.Add(command);
+        public void Enqueue(Command command) => _pending.Add(command);
 
         /// <summary>Advance the simulation by one tick.</summary>
         public void Step()
@@ -89,6 +150,7 @@ namespace SimCore
             foreach (Unit u in _units)
                 MoveUnit(u);
 
+            CollectIncome();
             Tick++;
         }
 
@@ -98,12 +160,16 @@ namespace SimCore
             StateHasher h = StateHasher.Create();
             h.Add(Tick);
             h.Add(Map.Hash());
+            h.Add(Resources);
+            h.Add(_incomeProgress);
             foreach (Building b in _buildings)
             {
                 h.Add(b.Id);
                 h.Add((int)b.Kind);
                 h.Add(b.X);
                 h.Add(b.Y);
+                h.Add(b.Output);
+                h.Add(b.Powered ? 1 : 0);
             }
             foreach (Unit u in _units)
             {
@@ -141,20 +207,52 @@ namespace SimCore
 
         private void ApplyPendingCommands()
         {
-            foreach (MoveCommand cmd in _pending)
+            foreach (Command cmd in _pending)
             {
-                var units = new List<Unit>(cmd.UnitIds.Length);
-                foreach (int id in cmd.UnitIds)
+                switch (cmd)
                 {
-                    Unit u = GetUnit(id);
-                    if (u != null) units.Add(u);
+                    case MoveCommand move: ApplyMove(move); break;
+                    case BuildCommand build: ApplyBuild(build); break;
                 }
-
-                Vec2[] offsets = FormationOffsets(units.Count);
-                for (int i = 0; i < units.Count; i++)
-                    GoTo(units[i], ClampToMap(cmd.Target + offsets[i]));
             }
             _pending.Clear();
+        }
+
+        private void ApplyMove(MoveCommand cmd)
+        {
+            var units = new List<Unit>(cmd.UnitIds.Length);
+            foreach (int id in cmd.UnitIds)
+            {
+                Unit u = GetUnit(id);
+                if (u != null) units.Add(u);
+            }
+
+            Vec2[] offsets = FormationOffsets(units.Count);
+            for (int i = 0; i < units.Count; i++)
+                GoTo(units[i], ClampToMap(cmd.Target + offsets[i]));
+        }
+
+        private void ApplyBuild(BuildCommand cmd)
+        {
+            if (CheckBuild(cmd.Kind, cmd.X, cmd.Y) != BuildCheck.Ok) return;
+
+            Resources -= Defs.Building(cmd.Kind).Cost;
+            PlaceBuilding(cmd.Kind, cmd.X, cmd.Y);
+
+            // The new building may block routes that were planned before it existed.
+            foreach (Unit u in _units)
+                if (u.Moving) GoTo(u, u.Target);
+        }
+
+        /// <summary>Adds the income for this tick. Whole resources only, so no fractions are needed.</summary>
+        private void CollectIncome()
+        {
+            _incomeProgress += IncomePerMinute;
+            while (_incomeProgress >= TicksPerMinute)
+            {
+                _incomeProgress -= TicksPerMinute;
+                Resources++;
+            }
         }
 
         /// <summary>Plans a route for the unit. Blocked destinations are moved to the nearest free cell; unreachable ones are ignored.</summary>

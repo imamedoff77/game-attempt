@@ -11,9 +11,18 @@ namespace SimCore
         public int Width { get; }
         public int Height { get; }
 
-        internal Building(int id, BuildingKind kind, int x, int y, int width, int height)
+        /// <summary>Energy produced (power plant) or resources per minute produced (supply center), fixed when built.</summary>
+        public int Output { get; }
+
+        /// <summary>False while the base lacks the energy to run this building.</summary>
+        public bool Powered { get; internal set; } = true;
+
+        internal Building(int id, BuildingKind kind, int x, int y, int width, int height, int output)
         {
-            Id = id; Kind = kind; X = x; Y = y; Width = width; Height = height;
+            Id = id; Kind = kind; X = x; Y = y; Width = width; Height = height; Output = output;
         }
+
+        public bool Contains(int cellX, int cellY) =>
+            cellX >= X && cellX < X + Width && cellY >= Y && cellY < Y + Height;
     }
 }
