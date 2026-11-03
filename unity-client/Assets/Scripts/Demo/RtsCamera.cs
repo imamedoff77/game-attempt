@@ -29,6 +29,13 @@ public class RtsCamera : MonoBehaviour
         Apply();
     }
 
+    /// <summary>Moves the camera so the given ground point is in the middle of the screen.</summary>
+    public void FocusOn(Vector3 groundPoint)
+    {
+        _pivot = new Vector3(Mathf.Clamp(groundPoint.x, 0f, _mapSize), 0f, Mathf.Clamp(groundPoint.z, 0f, _mapSize));
+        Apply();
+    }
+
     /// <summary>The point on the ground (y = 0) under a screen position.</summary>
     public bool GroundPoint(Vector2 screenPos, out Vector3 point)
     {

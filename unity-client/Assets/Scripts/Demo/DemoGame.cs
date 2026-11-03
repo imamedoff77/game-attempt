@@ -36,6 +36,10 @@ public sealed class DemoGame : MonoBehaviour
     private readonly List<ShotEvent> _shotBuffer = new List<ShotEvent>();
     private readonly List<int> _removeBuffer = new List<int>();
     private Material _enemyPalette;
+    private readonly System.Diagnostics.Stopwatch _stepTimer = new System.Diagnostics.Stopwatch();
+    private double _stepMsSum, _stepMsWindowMax;
+    private int _stepCount;
+    private float _statsWindowStart;
 
     // Selected building (instead of units), and the markers that show it
     private Building _selectedBuilding;
@@ -64,6 +68,10 @@ public sealed class DemoGame : MonoBehaviour
     public BuildingKind PlacingKind => _placingKind;
     public Vector2Int PlacingCell { get; private set; }
     public BuildCheck PlacingCheck { get; private set; }
+
+    /// <summary>Average and worst time of one simulation tick over the last few seconds (milliseconds). For the performance test.</summary>
+    public float SimMsAverage { get; private set; }
+    public float SimMsWorst { get; private set; }
 
     public enum GameOutcome { Playing, Victory, Defeat }
 
@@ -202,9 +210,22 @@ public sealed class DemoGame : MonoBehaviour
         int steps = 0;
         while (_accumulator >= TickSeconds && steps < 5)
         {
+            _stepTimer.Restart();
             World.Step();
+            double ms = _stepTimer.Elapsed.TotalMilliseconds;
+            _stepMsSum += ms;
+            _stepCount++;
+            if (ms > _stepMsWindowMax) _stepMsWindowMax = ms;
             _accumulator -= TickSeconds;
             steps++;
+        }
+        if (Time.unscaledTime - _statsWindowStart >= 3f)
+        {
+            SimMsAverage = _stepCount == 0 ? 0f : (float)(_stepMsSum / _stepCount);
+            SimMsWorst = (float)_stepMsWindowMax;
+            _stepMsSum = _stepMsWindowMax = 0;
+            _stepCount = 0;
+            _statsWindowStart = Time.unscaledTime;
         }
         if (steps == 5) _accumulator = 0f; // device too slow: drop the backlog instead of spiralling
 
@@ -338,6 +359,28 @@ public sealed class DemoGame : MonoBehaviour
     }
 
     public void ToggleBuildOverlay() => _terrain.SetOverlayVisible(!_terrain.OverlayVisible);
+
+    // ---- performance test ----
+
+    /// <summary>
+    /// Puts <paramref name="perSide"/> player units and as many enemy guards face to face in open sand
+    /// in the south-west, so they fight at once. Debug only: it bypasses the command queue.
+    /// </summary>
+    public void SpawnBattleTest(int perSide)
+    {
+        UnitKind[] kinds = { UnitKind.Rifleman, UnitKind.Rifleman, UnitKind.RocketTrooper, UnitKind.Jeep, UnitKind.Tank };
+        const int columns = 12;
+        for (int i = 0; i < perSide; i++)
+        {
+            UnitKind kind = kinds[i % kinds.Length];
+            Fix64 x = Fix64.FromInt(5 + i % columns) + Fix64.Half;
+            Fix64 row = Fix64.FromInt(i / columns);
+            World.SpawnUnit(kind, new Vec2(x, Fix64.FromInt(8) + row) + new Vec2(Fix64.Zero, Fix64.Half));
+            Unit enemy = World.SpawnUnit(kind, new Vec2(x, Fix64.FromInt(15) + row) + new Vec2(Fix64.Zero, Fix64.Half), SimCore.World.TeamEnemy);
+            World.SetGuard(enemy);
+        }
+        if (Cam != null) Cam.FocusOn(new Vector3(11f, 0f, 14f));
+    }
 
     // ---- production ----
 

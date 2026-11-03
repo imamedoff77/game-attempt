@@ -14,6 +14,7 @@ public sealed class DemoHud : MonoBehaviour
 
     private DemoGame _game;
     private float _smoothedDelta = 1f / 60f;
+    private float _worstFrame, _worstFrameWindow, _windowStart;
     private GUIStyle _label;
     private GUIStyle _stats;
     private GUIStyle _button;
@@ -28,6 +29,15 @@ public sealed class DemoHud : MonoBehaviour
     private void Update()
     {
         _smoothedDelta = Mathf.Lerp(_smoothedDelta, Time.unscaledDeltaTime, 0.05f);
+
+        // Worst frame time over the last 3 seconds (a spike shows up here even when the average FPS looks fine).
+        _worstFrameWindow = Mathf.Max(_worstFrameWindow, Time.unscaledDeltaTime);
+        if (Time.unscaledTime - _windowStart >= 3f)
+        {
+            _worstFrame = _worstFrameWindow;
+            _worstFrameWindow = 0f;
+            _windowStart = Time.unscaledTime;
+        }
 
         // Touch positions have their origin bottom-left, IMGUI rects top-left.
         if (_game.Touch != null)
@@ -66,6 +76,9 @@ public sealed class DemoHud : MonoBehaviour
         if (_menuOpen && !_game.Placing) DrawBuildMenu(world);
         if (_game.SelectedBuilding != null && !_game.Placing) DrawBuildingPanel(world, _game.SelectedBuilding);
         if (_game.SettingRally) DrawHint("Toplanma nöqtəsi: xəritəyə toxunun");
+
+        // Performance test (left side)
+        if (GUI.Button(TestRect(), "Sınaq: +25 mənim +25 düşmən", _button)) _game.SpawnBattleTest(25);
 
         // Bottom-right row
         Rect[] r = BottomRects();
@@ -120,6 +133,8 @@ public sealed class DemoHud : MonoBehaviour
 
         string info = $"FPS {1f / _smoothedDelta:0}   Units {world.Units.Count}   Selected {_game.SelectedCount}   Düşmən {_game.EnemyCount}   {_game.SelfTestStatus}";
         GUI.Label(new Rect(pad, pad + line * 2f, Screen.width * 0.6f, line), info, _label);
+        string perf = $"Kadr max {_worstFrame * 1000f:0} ms   Sim {_game.SimMsAverage:0.0} ms (max {_game.SimMsWorst:0.0})";
+        GUI.Label(new Rect(pad, pad + line * 2.7f, Screen.width * 0.6f, line), perf, _label);
     }
 
     private void DrawBuildMenu(World world)
@@ -315,6 +330,7 @@ public sealed class DemoHud : MonoBehaviour
     {
         foreach (Rect r in TopRects()) yield return r;
         foreach (Rect r in BottomRects()) yield return r;
+        yield return TestRect();
         if (_menuOpen && !_game.Placing)
             foreach (Rect r in MenuRects()) yield return r;
         if (_game.SelectedBuilding != null && !_game.Placing)
@@ -337,6 +353,12 @@ public sealed class DemoHud : MonoBehaviour
         for (int i = 1; i < count; i++)
             rects[i] = new Rect(x, y + infoH + gap + (i - 1) * (buttonH + gap), w, buttonH);
         return rects;
+    }
+
+    private static Rect TestRect()
+    {
+        float pad = Screen.height * 0.02f;
+        return new Rect(pad, Screen.height * 0.30f, Screen.width * 0.2f, Screen.height * 0.12f);
     }
 
     private static Rect[] BottomRects()
