@@ -34,6 +34,13 @@ public sealed class DemoGame : MonoBehaviour
     private float _accumulator;
     private TerrainView _terrain;
     private int _buildingViews;
+    private int _unitViews;
+
+    // Selected building (instead of units), and the markers that show it
+    private Building _selectedBuilding;
+    private GameObject _buildingHighlight;
+    private GameObject _rallyMarker;
+    private Material _highlightMaterial;
 
     // Choosing where to build
     private BuildGhost _ghost;
@@ -46,6 +53,10 @@ public sealed class DemoGame : MonoBehaviour
     public int SelectedCount => _selected.Count;
     public string SelfTestStatus { get; private set; }
     public bool BuildOverlayVisible => _terrain != null && _terrain.OverlayVisible;
+
+    public Building SelectedBuilding => _selectedBuilding;
+    /// <summary>True after "Toplanma nöqtəsi" was pressed: the next tap on the map sets the rally point.</summary>
+    public bool SettingRally { get; private set; }
 
     public bool Placing => _ghost != null;
     public BuildingKind PlacingKind => _placingKind;
@@ -72,6 +83,7 @@ public sealed class DemoGame : MonoBehaviour
         SyncBuildingViews();
 
         SpawnStartingUnits();
+        SyncUnitViews();
 
         Cam = Camera.main.GetComponent<RtsCamera>();
         Cam.Init(new Vector3(StartCenter.x, 0f, StartCenter.y + 2f), MapSize);
@@ -85,6 +97,16 @@ public sealed class DemoGame : MonoBehaviour
         while (_buildingViews < World.Buildings.Count)
             SpawnBuildingView(World.Buildings[_buildingViews++]);
         if (_terrain.OverlayVisible) _terrain.RefreshOverlay();
+    }
+
+    /// <summary>Creates a view for every unit the simulation has that has none yet (units are only ever added, for now).</summary>
+    private void SyncUnitViews()
+    {
+        while (_unitViews < World.Units.Count)
+        {
+            Unit unit = World.Units[_unitViews++];
+            _views[unit.Id] = UnitView.Create(unit, unitModels[(int)unit.Kind], paletteMaterial, ringMaterial);
+        }
     }
 
     private void SpawnBuildingView(Building b)
@@ -105,8 +127,7 @@ public sealed class DemoGame : MonoBehaviour
             for (int i = 0; i < 3; i++)
             {
                 var pos = new Vec2(Fix64.FromInt(23 + col * 2) + Fix64.Half, Fix64.FromInt(30 + i) + Fix64.Half);
-                Unit unit = World.SpawnUnit(order[col], pos);
-                _views[unit.Id] = UnitView.Create(unit, unitModels[(int)unit.Kind], paletteMaterial, ringMaterial);
+                World.SpawnUnit(order[col], pos);
             }
         }
     }
@@ -126,7 +147,9 @@ public sealed class DemoGame : MonoBehaviour
         if (steps == 5) _accumulator = 0f; // device too slow: drop the backlog instead of spiralling
 
         SyncBuildingViews();
+        SyncUnitViews();
         UpdateGhost();
+        UpdateSelectionMarkers();
 
         float alpha = _accumulator / TickSeconds;
         foreach (UnitView view in _views.Values)
@@ -143,9 +166,38 @@ public sealed class DemoGame : MonoBehaviour
             return;
         }
 
+        if (SettingRally)
+        {
+            if (Cam.GroundPoint(screen, out Vector3 rally))
+            {
+                World.Enqueue(new SetRallyCommand(_selectedBuilding.Id, ToVec2(rally)));
+                TapMarker.Spawn(rally, markerMaterial);
+            }
+            SettingRally = false;
+            return;
+        }
+
         int unitId = PickUnit(screen);
+        if (unitId == -1 && Cam.GroundPoint(screen, out Vector3 spot2))
+        {
+            Building hit = BuildingAt(spot2);
+            if (hit != null)
+            {
+                _selected.Clear();
+                _selectedBuilding = hit;
+                return;
+            }
+            // Tapping empty ground with only a building selected just deselects it.
+            if (_selectedBuilding != null && _selected.Count == 0)
+            {
+                _selectedBuilding = null;
+                return;
+            }
+        }
+
         if (unitId != -1)
         {
+            _selectedBuilding = null;
             // Tapping the only selected unit again deselects it.
             if (_selected.Count == 1 && _selected.Contains(unitId))
             {
@@ -165,6 +217,7 @@ public sealed class DemoGame : MonoBehaviour
 
     public void SelectInRect(Rect screenRect)
     {
+        _selectedBuilding = null;
         _selected.Clear();
         foreach (UnitView view in _views.Values)
         {
@@ -175,13 +228,69 @@ public sealed class DemoGame : MonoBehaviour
 
     public void SelectAll()
     {
+        _selectedBuilding = null;
         _selected.Clear();
         foreach (int id in _views.Keys) _selected.Add(id);
     }
 
-    public void ClearSelection() => _selected.Clear();
+    public void ClearSelection()
+    {
+        _selected.Clear();
+        _selectedBuilding = null;
+        SettingRally = false;
+    }
 
     public void ToggleBuildOverlay() => _terrain.SetOverlayVisible(!_terrain.OverlayVisible);
+
+    // ---- production ----
+
+    public void QueueUnit(UnitKind kind)
+    {
+        if (_selectedBuilding != null) World.Enqueue(new QueueUnitCommand(_selectedBuilding.Id, kind));
+    }
+
+    /// <summary>Removes the last unit in the selected building's queue (it is refunded).</summary>
+    public void CancelLastQueued()
+    {
+        if (_selectedBuilding != null && _selectedBuilding.Queue.Count > 0)
+            World.Enqueue(new CancelQueuedCommand(_selectedBuilding.Id, _selectedBuilding.Queue.Count - 1));
+    }
+
+    public void BeginSetRally() => SettingRally = _selectedBuilding != null;
+
+    private Building BuildingAt(Vector3 ground)
+    {
+        int x = Mathf.FloorToInt(ground.x), y = Mathf.FloorToInt(ground.z);
+        if (!World.Map.InBounds(x, y)) return null;
+        int id = World.Map.BuildingAt(x, y);
+        return id == 0 ? null : World.GetBuilding(id);
+    }
+
+    /// <summary>Yellow footprint under the selected building, and a ring where its units gather.</summary>
+    private void UpdateSelectionMarkers()
+    {
+        if (_highlightMaterial == null)
+            _highlightMaterial = new Material(overlayMaterial) { color = new Color(1f, 0.9f, 0.2f, 0.45f) };
+
+        if (_selectedBuilding == null || Placing)
+        {
+            if (_buildingHighlight != null) _buildingHighlight.SetActive(false);
+            if (_rallyMarker != null) _rallyMarker.SetActive(false);
+            return;
+        }
+
+        Building b = _selectedBuilding;
+        if (_buildingHighlight == null)
+            _buildingHighlight = MeshFactory.Spawn("BuildingHighlight", MeshFactory.Quad(1f, 1f), _highlightMaterial);
+        _buildingHighlight.SetActive(true);
+        _buildingHighlight.transform.position = new Vector3(b.X - 0.25f, 0.05f, b.Y - 0.25f);
+        _buildingHighlight.transform.localScale = new Vector3(b.Width + 0.5f, 1f, b.Height + 0.5f);
+
+        if (_rallyMarker == null)
+            _rallyMarker = MeshFactory.Spawn("RallyMarker", MeshFactory.Ring(0.35f, 0.55f), markerMaterial);
+        _rallyMarker.SetActive(b.HasRally);
+        if (b.HasRally) _rallyMarker.transform.position = new Vector3(b.Rally.X.ToFloat(), 0.07f, b.Rally.Y.ToFloat());
+    }
 
     // ---- building ----
 
@@ -237,9 +346,7 @@ public sealed class DemoGame : MonoBehaviour
     private void OrderMove(Vector3 ground)
     {
         // Quantise the input to 1/16 of a map unit so the command is a clean fixed-point value.
-        var target = new Vec2(
-            Fix64.FromFraction(Mathf.RoundToInt(ground.x * 16f), 16),
-            Fix64.FromFraction(Mathf.RoundToInt(ground.z * 16f), 16));
+        Vec2 target = ToVec2(ground);
 
         var ids = new int[_selected.Count];
         _selected.CopyTo(ids);
@@ -247,6 +354,10 @@ public sealed class DemoGame : MonoBehaviour
 
         TapMarker.Spawn(ground, markerMaterial);
     }
+
+    private static Vec2 ToVec2(Vector3 ground) => new Vec2(
+        Fix64.FromFraction(Mathf.RoundToInt(ground.x * 16f), 16),
+        Fix64.FromFraction(Mathf.RoundToInt(ground.z * 16f), 16));
 
     private int PickUnit(Vector2 screen)
     {

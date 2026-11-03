@@ -48,6 +48,7 @@ public sealed class DemoHud : MonoBehaviour
 
         DrawStats(world);
         DrawUnpoweredIcons(world);
+        DrawProductionBars(world);
 
         // Top-right: build menu button and simulation speed.
         Rect[] top = TopRects();
@@ -60,7 +61,10 @@ public sealed class DemoHud : MonoBehaviour
             if (GUI.Button(top[i + 1], text, _button)) _game.SimSpeed = Speeds[i];
         }
 
+        if (_game.SelectedBuilding != null) _menuOpen = false;
         if (_menuOpen && !_game.Placing) DrawBuildMenu(world);
+        if (_game.SelectedBuilding != null && !_game.Placing) DrawBuildingPanel(world, _game.SelectedBuilding);
+        if (_game.SettingRally) DrawHint("Toplanma nöqtəsi: xəritəyə toxunun");
 
         // Bottom-right row
         Rect[] r = BottomRects();
@@ -142,6 +146,84 @@ public sealed class DemoHud : MonoBehaviour
         }
     }
 
+    private void DrawBuildingPanel(World world, Building b)
+    {
+        BuildingDef def = Defs.Building(b.Kind);
+        UnitKind[] units = Defs.Produces(b.Kind);
+        Rect[] rects = PanelRects(units.Length);
+
+        string state = b.Powered ? "işləyir" : "ENERJİ ÇATMIR - işləmir";
+        string text = $"{def.Name}  ({state})";
+        if (units.Length > 0)
+        {
+            text += "\nNövbə: ";
+            if (b.Queue.Count == 0) text += "boş";
+            for (int i = 0; i < b.Queue.Count; i++)
+            {
+                if (i > 0) text += ", ";
+                text += Defs.Unit(b.Queue[i]).Name;
+                if (i == 0) text += $" {Percent(b)}%";
+            }
+        }
+        GUI.Box(rects[0], "");
+        GUI.Label(rects[0], text, _label);
+
+        for (int i = 0; i < units.Length; i++)
+        {
+            UnitDef ud = Defs.Unit(units[i]);
+            QueueCheck check = world.CheckQueue(b, units[i]);
+            GUI.enabled = check == QueueCheck.Ok;
+            string extra = check == QueueCheck.QueueFull ? "  (növbə dolu)" : "";
+            if (GUI.Button(rects[1 + i], $"{ud.Name}  -  {ud.Cost}  ({ud.BuildSeconds} san){extra}", _button))
+                _game.QueueUnit(units[i]);
+        }
+
+        if (units.Length > 0)
+        {
+            GUI.enabled = b.Queue.Count > 0;
+            if (GUI.Button(rects[1 + units.Length], "Sonuncunu ləğv et", _button)) _game.CancelLastQueued();
+            GUI.enabled = true;
+            if (GUI.Button(rects[2 + units.Length], b.HasRally ? "Toplanma nöqtəsini dəyiş" : "Toplanma nöqtəsi", _button)) _game.BeginSetRally();
+        }
+        GUI.enabled = true;
+    }
+
+    private static int Percent(Building b)
+    {
+        if (b.Queue.Count == 0) return 0;
+        int total = Defs.Unit(b.Queue[0]).BuildSeconds * World.TicksPerSecond;
+        return Mathf.Min(100, b.Progress * 100 / total);
+    }
+
+    /// <summary>A small progress bar over every building that is producing something.</summary>
+    private void DrawProductionBars(World world)
+    {
+        if (_game.Cam == null) return;
+        float w = Screen.height * 0.12f, h = Screen.height * 0.014f;
+        foreach (Building b in world.Buildings)
+        {
+            if (b.Queue.Count == 0) continue;
+            Vector3 sp = _game.Cam.Camera.WorldToScreenPoint(new Vector3(b.X + b.Width / 2f, 0.2f, b.Y + b.Height / 2f));
+            if (sp.z <= 0f) continue;
+            var back = new Rect(sp.x - w / 2f, Screen.height - sp.y - h / 2f, w, h);
+            Color old = GUI.color;
+            GUI.color = new Color(0f, 0f, 0f, 0.7f);
+            GUI.DrawTexture(back, Texture2D.whiteTexture);
+            GUI.color = b.Powered ? new Color(0.3f, 0.9f, 0.4f) : new Color(0.9f, 0.7f, 0.2f);
+            GUI.DrawTexture(new Rect(back.x, back.y, back.width * Percent(b) / 100f, back.height), Texture2D.whiteTexture);
+            GUI.color = old;
+        }
+    }
+
+    private void DrawHint(string text)
+    {
+        float pad = Screen.height * 0.02f;
+        float y = Screen.height - Screen.height * 0.11f - Screen.height * 0.015f - Screen.height * 0.12f;
+        var rect = new Rect(Screen.width - Screen.width * 0.5f - pad, y, Screen.width * 0.5f, Screen.height * 0.1f);
+        GUI.Box(rect, "");
+        GUI.Label(rect, text, _label);
+    }
+
     private void DrawPlacementHint()
     {
         BuildingDef def = Defs.Building(_game.PlacingKind);
@@ -184,6 +266,26 @@ public sealed class DemoHud : MonoBehaviour
         foreach (Rect r in BottomRects()) yield return r;
         if (_menuOpen && !_game.Placing)
             foreach (Rect r in MenuRects()) yield return r;
+        if (_game.SelectedBuilding != null && !_game.Placing)
+            foreach (Rect r in PanelRects(Defs.Produces(_game.SelectedBuilding.Kind).Length)) yield return r;
+    }
+
+    /// <summary>Right-hand panel of the selected building: info box, one button per unit, cancel, rally.</summary>
+    private static Rect[] PanelRects(int unitCount)
+    {
+        float gap = Screen.height * 0.015f;
+        float w = Screen.width * 0.34f;
+        float x = Screen.width - w - gap;
+        float y = gap * 2f + Screen.height * 0.09f;
+        float infoH = Screen.height * 0.17f;
+        float buttonH = Screen.height * 0.1f;
+
+        int count = unitCount == 0 ? 1 : 1 + unitCount + 2;
+        var rects = new Rect[count];
+        rects[0] = new Rect(x, y, w, infoH);
+        for (int i = 1; i < count; i++)
+            rects[i] = new Rect(x, y + infoH + gap + (i - 1) * (buttonH + gap), w, buttonH);
+        return rects;
     }
 
     private static Rect[] BottomRects()

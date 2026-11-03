@@ -64,7 +64,7 @@ Bunların hamısı **demodan sonra**dır. Demoda heç biri yoxdur.
 | **D1** ✅ | Meydança | Xəritə, kamera. Əsgər seçmək və hərəkət etdirmək | **Bitdi (2026-11-02).** Galaxy A34-də 60 FPS, toxunuşla seçmə, çərçivə ilə seçmə, hərəkət əmri və kamera sürüşdürməsi işləyir. Pinch-zoom hələ sınanmayıb |
 | **D1.5** ✅ | Səhra və modellər | Səhra xəritəsi, qum/qaya/su sahələri, 3D vahid və bina modelləri | **Bitdi (2026-11-02).** Səhra xəritəsi, 5 bina və 4 vahid modeli telefonda 60 FPS, vahidlər qaya/su/binanı dolanır, "Tikinti sahələri" qatı işləyir |
 | **D2** ✅ | Baza | HQ, resurs sayğacı, enerji göstəricisi. Menyudan bina seçib yerləşdirmək | **Bitdi (2026-11-03).** Tikinti menyusu, xəritədə yer seçmə (yaşıl/qırmızı), təsdiq. Resurs azalır, enerji balansı dəyişir, enerji çatmayanda binada elektrik işarəsi. Sürət x1/x5/x10. Bina ani tikilir (tikinti vaxtı yoxdur), baza ətrafında məsafə məhdudiyyəti yoxdur |
-| **D3** | İstehsal | Kazarma və zavoddan əsgər/cip/tank istehsalı, növbə, çıxış nöqtəsi | İstehsal vaxtı və qiyməti işləyir, enerji azdırsa yavaşlayır |
+| **D3** ✅ | İstehsal | Kazarma və zavoddan əsgər/cip/tank istehsalı, növbə, çıxış nöqtəsi | **Bitdi (2026-11-03).** Binaya toxunub seçmək, növbəyə vahid qoymaq (qiymət ödənilir, ləğv edəndə qaytarılır), irəliləyiş çubuğu, toplanma nöqtəsi. Enerji çatmayanda istehsal dayanır. Əsgər 50/4s, Raketçi 80/6s, Cip 150/8s, Tank 300/15s (müvəqqəti). Növbə max 5. Vahid limiti hələ yoxdur |
 | **D4** | Döyüş | Düşmən bina və əsgərlər. Hücum əmri, can azalması, məhv olma | Ordunu düşmən bazasına göndərib məhv etmək olur |
 | **D5** | Qiymətləndirmə | 50 və 100 vahidlə ölçmə, hiss qeydləri | FPS, batareya/qızma, idarəetmə rahatlığı, "davam edirik" və ya "dəyişirik" qərarı |
 

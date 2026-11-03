@@ -9,6 +9,7 @@ namespace SimCore
     public sealed class World
     {
         public const int TicksPerSecond = 20;
+        public const int MaxQueue = 5;
         private const int TicksPerMinute = TicksPerSecond * 60;
 
         /// <summary>Distance between units when they spread out around a move target.</summary>
@@ -135,6 +136,12 @@ namespace SimCore
             IncomePerMinute = income;
         }
 
+        public Building GetBuilding(int id)
+        {
+            foreach (Building b in _buildings) if (b.Id == id) return b;
+            return null;
+        }
+
         public Unit GetUnit(int id) => _unitsById.TryGetValue(id, out Unit u) ? u : null;
 
         public void Enqueue(Command command) => _pending.Add(command);
@@ -146,6 +153,8 @@ namespace SimCore
                 u.PrevPos = u.Pos;
 
             ApplyPendingCommands();
+
+            ProduceUnits();
 
             foreach (Unit u in _units)
                 MoveUnit(u);
@@ -162,6 +171,7 @@ namespace SimCore
             h.Add(Map.Hash());
             h.Add(Resources);
             h.Add(_incomeProgress);
+            h.Add(_nextUnitId);
             foreach (Building b in _buildings)
             {
                 h.Add(b.Id);
@@ -170,6 +180,11 @@ namespace SimCore
                 h.Add(b.Y);
                 h.Add(b.Output);
                 h.Add(b.Powered ? 1 : 0);
+                h.Add(b.Progress);
+                h.Add(b.Spawned);
+                h.Add(b.HasRally ? 1 : 0);
+                if (b.HasRally) h.Add(b.Rally);
+                foreach (UnitKind q in b.QueueList) h.Add((int)q);
             }
             foreach (Unit u in _units)
             {
@@ -213,6 +228,9 @@ namespace SimCore
                 {
                     case MoveCommand move: ApplyMove(move); break;
                     case BuildCommand build: ApplyBuild(build); break;
+                    case QueueUnitCommand queue: ApplyQueue(queue); break;
+                    case CancelQueuedCommand cancel: ApplyCancel(cancel); break;
+                    case SetRallyCommand rally: ApplyRally(rally); break;
                 }
             }
             _pending.Clear();
@@ -242,6 +260,70 @@ namespace SimCore
             // The new building may block routes that were planned before it existed.
             foreach (Unit u in _units)
                 if (u.Moving) GoTo(u, u.Target);
+        }
+
+        /// <summary>Why a unit can or cannot be queued at a building.</summary>
+        public QueueCheck CheckQueue(Building b, UnitKind kind)
+        {
+            if (b == null || Defs.Unit(kind).Producer != b.Kind) return QueueCheck.NotAllowed;
+            if (b.QueueList.Count >= MaxQueue) return QueueCheck.QueueFull;
+            if (Resources < Defs.Unit(kind).Cost) return QueueCheck.NotEnoughResources;
+            return QueueCheck.Ok;
+        }
+
+        private void ApplyQueue(QueueUnitCommand cmd)
+        {
+            Building b = GetBuilding(cmd.BuildingId);
+            if (CheckQueue(b, cmd.Kind) != QueueCheck.Ok) return;
+            Resources -= Defs.Unit(cmd.Kind).Cost;
+            b.QueueList.Add(cmd.Kind);
+        }
+
+        private void ApplyCancel(CancelQueuedCommand cmd)
+        {
+            Building b = GetBuilding(cmd.BuildingId);
+            if (b == null || cmd.Index < 0 || cmd.Index >= b.QueueList.Count) return;
+            Resources += Defs.Unit(b.QueueList[cmd.Index]).Cost;
+            b.QueueList.RemoveAt(cmd.Index);
+            if (cmd.Index == 0) b.Progress = 0;
+        }
+
+        private void ApplyRally(SetRallyCommand cmd)
+        {
+            Building b = GetBuilding(cmd.BuildingId);
+            if (b == null || Defs.Produces(b.Kind).Length == 0) return;
+            b.HasRally = true;
+            b.Rally = ClampToMap(cmd.Point);
+        }
+
+        /// <summary>Advances every working production building; finished units appear at its door.</summary>
+        private void ProduceUnits()
+        {
+            foreach (Building b in _buildings)
+            {
+                if (b.QueueList.Count == 0 || !b.Powered) continue;
+
+                UnitKind kind = b.QueueList[0];
+                if (b.Progress < Defs.Unit(kind).BuildSeconds * TicksPerSecond)
+                {
+                    b.Progress++;
+                    continue;
+                }
+
+                // Door is on the low-y side, middle of the footprint.
+                var door = Pathfinder.NearestWalkable(Map, b.X + b.Width / 2, b.Y - 1);
+                if (door == null) continue; // nowhere to stand: wait
+
+                // Spread new units a little so they do not all sit on one point.
+                Fix64 offset = Fix64.FromFraction((b.Spawned % 4) * 3 - 4, 10);
+                var pos = new Vec2(Fix64.FromInt(door.Value.x) + Fix64.Half + offset, Fix64.FromInt(door.Value.y) + Fix64.Half);
+                b.Spawned++;
+                b.QueueList.RemoveAt(0);
+                b.Progress = 0;
+
+                Unit unit = SpawnUnit(kind, pos);
+                if (b.HasRally) GoTo(unit, b.Rally);
+            }
         }
 
         /// <summary>Adds the income for this tick. Whole resources only, so no fractions are needed.</summary>

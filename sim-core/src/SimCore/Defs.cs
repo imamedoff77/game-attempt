@@ -8,6 +8,8 @@ namespace SimCore
 
     public enum BuildingKind { Hq, PowerPlant, SupplyCenter, Barracks, VehicleFactory }
 
+    public enum QueueCheck { Ok, NotAllowed, QueueFull, NotEnoughResources }
+
     public enum BuildCheck { Ok, NotAllowed, BadGround, UnitInWay, NotEnoughResources }
 
     public readonly struct UnitDef
@@ -17,10 +19,15 @@ namespace SimCore
         public string Name { get; }
         /// <summary>Map units per second.</summary>
         public Fix64 Speed { get; }
+        /// <summary>Resource price, paid when it is queued.</summary>
+        public int Cost { get; }
+        /// <summary>Seconds of production time (while the producing building has energy).</summary>
+        public int BuildSeconds { get; }
+        public BuildingKind Producer { get; }
 
-        public UnitDef(UnitKind kind, UnitClass unitClass, string name, Fix64 speed)
+        public UnitDef(UnitKind kind, UnitClass unitClass, string name, Fix64 speed, int cost, int buildSeconds, BuildingKind producer)
         {
-            Kind = kind; Class = unitClass; Name = name; Speed = speed;
+            Kind = kind; Class = unitClass; Name = name; Speed = speed; Cost = cost; BuildSeconds = buildSeconds; Producer = producer;
         }
     }
 
@@ -49,11 +56,26 @@ namespace SimCore
         {
             switch (kind)
             {
-                case UnitKind.Rifleman: return new UnitDef(kind, UnitClass.Infantry, "Əsgər", Fix64.FromInt(3));
-                case UnitKind.RocketTrooper: return new UnitDef(kind, UnitClass.Infantry, "Raketçi", Fix64.FromFraction(5, 2));
-                case UnitKind.Jeep: return new UnitDef(kind, UnitClass.Vehicle, "Cip", Fix64.FromInt(6));
-                case UnitKind.Tank: return new UnitDef(kind, UnitClass.Vehicle, "Tank", Fix64.FromInt(2));
+                case UnitKind.Rifleman: return new UnitDef(kind, UnitClass.Infantry, "Əsgər", Fix64.FromInt(3), 50, 4, BuildingKind.Barracks);
+                case UnitKind.RocketTrooper: return new UnitDef(kind, UnitClass.Infantry, "Raketçi", Fix64.FromFraction(5, 2), 80, 6, BuildingKind.Barracks);
+                case UnitKind.Jeep: return new UnitDef(kind, UnitClass.Vehicle, "Cip", Fix64.FromInt(6), 150, 8, BuildingKind.VehicleFactory);
+                case UnitKind.Tank: return new UnitDef(kind, UnitClass.Vehicle, "Tank", Fix64.FromInt(2), 300, 15, BuildingKind.VehicleFactory);
                 default: throw new ArgumentOutOfRangeException(nameof(kind));
+            }
+        }
+
+        private static readonly UnitKind[] BarracksUnits = { UnitKind.Rifleman, UnitKind.RocketTrooper };
+        private static readonly UnitKind[] FactoryUnits = { UnitKind.Jeep, UnitKind.Tank };
+        private static readonly UnitKind[] NoUnits = new UnitKind[0];
+
+        /// <summary>The units a building can produce (empty for buildings that produce nothing).</summary>
+        public static UnitKind[] Produces(BuildingKind kind)
+        {
+            switch (kind)
+            {
+                case BuildingKind.Barracks: return BarracksUnits;
+                case BuildingKind.VehicleFactory: return FactoryUnits;
+                default: return NoUnits;
             }
         }
 

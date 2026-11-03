@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace SimCore
 {
     public sealed class Building
@@ -16,6 +18,19 @@ namespace SimCore
 
         /// <summary>False while the base lacks the energy to run this building.</summary>
         public bool Powered { get; internal set; } = true;
+
+        /// <summary>Units waiting to be produced; the first one is being built.</summary>
+        public IReadOnlyList<UnitKind> Queue => QueueList;
+        internal readonly List<UnitKind> QueueList = new List<UnitKind>();
+
+        /// <summary>Ticks of work done on the first queued unit.</summary>
+        public int Progress { get; internal set; }
+
+        /// <summary>Where new units walk to after they appear (only when HasRally).</summary>
+        public bool HasRally { get; internal set; }
+        public Vec2 Rally { get; internal set; }
+
+        internal int Spawned;
 
         internal Building(int id, BuildingKind kind, int x, int y, int width, int height, int output)
         {

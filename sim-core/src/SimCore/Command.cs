@@ -33,4 +33,40 @@ namespace SimCore
             Kind = kind; X = x; Y = y;
         }
     }
+
+    /// <summary>Order to add a unit to a building's production queue. Ignored if not allowed or too expensive.</summary>
+    public sealed class QueueUnitCommand : Command
+    {
+        public int BuildingId { get; }
+        public UnitKind Kind { get; }
+
+        public QueueUnitCommand(int buildingId, UnitKind kind)
+        {
+            BuildingId = buildingId; Kind = kind;
+        }
+    }
+
+    /// <summary>Order to remove one entry from a production queue; its price is refunded.</summary>
+    public sealed class CancelQueuedCommand : Command
+    {
+        public int BuildingId { get; }
+        public int Index { get; }
+
+        public CancelQueuedCommand(int buildingId, int index)
+        {
+            BuildingId = buildingId; Index = index;
+        }
+    }
+
+    /// <summary>Order to set the point new units from a building walk to.</summary>
+    public sealed class SetRallyCommand : Command
+    {
+        public int BuildingId { get; }
+        public Vec2 Point { get; }
+
+        public SetRallyCommand(int buildingId, Vec2 point)
+        {
+            BuildingId = buildingId; Point = point;
+        }
+    }
 }
