@@ -10,6 +10,8 @@ namespace SimCore
     {
         public const int TicksPerSecond = 20;
         public const int MaxQueue = 5;
+        public const int TeamPlayer = 0;
+        public const int TeamEnemy = 1;
         private const int TicksPerMinute = TicksPerSecond * 60;
 
         /// <summary>Distance between units when they spread out around a move target.</summary>
@@ -22,6 +24,7 @@ namespace SimCore
         private int _nextUnitId = 1;
         private int _nextBuildingId = 1;
         private int _incomeProgress; // resource-ticks collected towards the next whole resource
+        private readonly List<ShotEvent> _shots = new List<ShotEvent>();
 
         public MapGrid Map { get; }
         public Fix64 Width { get; }
@@ -56,31 +59,45 @@ namespace SimCore
 
         public Unit SpawnUnit(UnitKind kind, Vec2 position)
         {
-            return Spawn(kind, position, Defs.Unit(kind).Speed);
+            return Spawn(kind, position, Defs.Unit(kind).Speed, TeamPlayer);
+        }
+
+        public Unit SpawnUnit(UnitKind kind, Vec2 position, int team)
+        {
+            return Spawn(kind, position, Defs.Unit(kind).Speed, team);
+        }
+
+        /// <summary>Makes a unit a computer-controlled guard around where it stands; with patrol points it walks between them.</summary>
+        public void SetGuard(Unit unit, Vec2[] patrol = null)
+        {
+            unit.Guard = true;
+            unit.Home = unit.Pos;
+            unit.Patrol = patrol;
+            unit.PatrolIndex = 0;
         }
 
         /// <param name="speedPerSecond">Map units per second.</param>
         public Unit SpawnUnit(Vec2 position, Fix64 speedPerSecond)
         {
-            return Spawn(UnitKind.Rifleman, position, speedPerSecond);
+            return Spawn(UnitKind.Rifleman, position, speedPerSecond, TeamPlayer);
         }
 
-        private Unit Spawn(UnitKind kind, Vec2 position, Fix64 speedPerSecond)
+        private Unit Spawn(UnitKind kind, Vec2 position, Fix64 speedPerSecond, int team)
         {
             Fix64 step = Fix64.FromRaw(speedPerSecond.Raw / TicksPerSecond);
-            var unit = new Unit(_nextUnitId++, kind, ClampToMap(position), step);
+            var unit = new Unit(_nextUnitId++, kind, team, ClampToMap(position), step);
             _units.Add(unit);
             _unitsById[unit.Id] = unit;
             return unit;
         }
 
         /// <summary>Places a building with its top-left corner on cell (x, y). Returns null if it does not fit there.</summary>
-        public Building PlaceBuilding(BuildingKind kind, int x, int y)
+        public Building PlaceBuilding(BuildingKind kind, int x, int y, int team = TeamPlayer)
         {
             BuildingDef def = Defs.Building(kind);
             if (!Map.CanPlace(x, y, def.Width, def.Height)) return null;
 
-            var building = new Building(_nextBuildingId++, kind, x, y, def.Width, def.Height, NextOutput(kind));
+            var building = new Building(_nextBuildingId++, kind, team, x, y, def.Width, def.Height, team == TeamPlayer ? NextOutput(kind) : 0);
             for (int cy = y; cy < y + def.Height; cy++)
                 for (int cx = x; cx < x + def.Width; cx++)
                     Map.SetBuilding(cx, cy, building.Id);
@@ -110,7 +127,7 @@ namespace SimCore
         {
             if (kind != BuildingKind.PowerPlant && kind != BuildingKind.SupplyCenter) return 0;
             int existing = 0;
-            foreach (Building b in _buildings) if (b.Kind == kind) existing++;
+            foreach (Building b in _buildings) if (b.Kind == kind && b.Team == TeamPlayer) existing++;
             return Economy.Pick(kind == BuildingKind.PowerPlant ? Economy.PowerPlantOutput : Economy.SupplyCenterIncome, existing);
         }
 
@@ -120,6 +137,7 @@ namespace SimCore
             int capacity = Economy.HqEnergy, used = 0;
             foreach (Building b in _buildings)
             {
+                if (b.Team != TeamPlayer) continue;
                 if (b.Kind == BuildingKind.PowerPlant) capacity += b.Output;
                 used += Defs.Building(b.Kind).EnergyUse;
             }
@@ -129,6 +147,7 @@ namespace SimCore
             int income = Economy.HqIncomePerMinute;
             foreach (Building b in _buildings)
             {
+                if (b.Team != TeamPlayer) continue;
                 // Demo rule: in a shortage every building that needs energy stops.
                 b.Powered = !EnergyShortage || Defs.Building(b.Kind).EnergyUse == 0;
                 if (b.Kind == BuildingKind.SupplyCenter && b.Powered) income += b.Output;
@@ -155,10 +174,12 @@ namespace SimCore
             ApplyPendingCommands();
 
             ProduceUnits();
+            Fight();
 
             foreach (Unit u in _units)
                 MoveUnit(u);
 
+            RemoveDestroyed();
             CollectIncome();
             Tick++;
         }
@@ -179,6 +200,8 @@ namespace SimCore
                 h.Add(b.X);
                 h.Add(b.Y);
                 h.Add(b.Output);
+                h.Add(b.Team);
+                h.Add(b.Hp);
                 h.Add(b.Powered ? 1 : 0);
                 h.Add(b.Progress);
                 h.Add(b.Spawned);
@@ -194,6 +217,11 @@ namespace SimCore
                 h.Add(u.Target);
                 h.Add(u.Moving ? 1 : 0);
                 h.Add(u.PathIndex);
+                h.Add(u.Team);
+                h.Add(u.Hp);
+                h.Add((int)u.AttackKind);
+                h.Add(u.AttackId);
+                h.Add(u.Cooldown);
             }
             return h.Value;
         }
@@ -227,6 +255,7 @@ namespace SimCore
                 switch (cmd)
                 {
                     case MoveCommand move: ApplyMove(move); break;
+                    case AttackCommand attack: ApplyAttack(attack); break;
                     case BuildCommand build: ApplyBuild(build); break;
                     case QueueUnitCommand queue: ApplyQueue(queue); break;
                     case CancelQueuedCommand cancel: ApplyCancel(cancel); break;
@@ -245,9 +274,50 @@ namespace SimCore
                 if (u != null) units.Add(u);
             }
 
+            Fix64 cap = SlowestStep(units);
             Vec2[] offsets = FormationOffsets(units.Count);
             for (int i = 0; i < units.Count; i++)
+            {
+                if (units[i].Team != TeamPlayer) continue;
+                ClearTarget(units[i]); // a move order cancels an attack order
+                units[i].SpeedCap = cap;
                 GoTo(units[i], ClampToMap(cmd.Target + offsets[i]));
+            }
+        }
+
+        /// <summary>The slowest step among the player's units in the list: a group travels together at that pace.</summary>
+        private static Fix64 SlowestStep(List<Unit> units)
+        {
+            Fix64 slowest = default;
+            bool any = false;
+            foreach (Unit u in units)
+            {
+                if (u.Team != TeamPlayer) continue;
+                if (!any || u.StepPerTick < slowest) { slowest = u.StepPerTick; any = true; }
+            }
+            return slowest;
+        }
+
+        private void ApplyAttack(AttackCommand cmd)
+        {
+            if (!TargetPosition(cmd.TargetKind, cmd.TargetId, TeamEnemy, out _)) return;
+
+            var units = new List<Unit>(cmd.UnitIds.Length);
+            foreach (int id in cmd.UnitIds)
+            {
+                Unit found = GetUnit(id);
+                if (found != null) units.Add(found);
+            }
+            Fix64 cap = SlowestStep(units);
+
+            foreach (Unit u in units)
+            {
+                if (u.Team != TeamPlayer) continue;
+                u.SpeedCap = cap;
+                u.AttackKind = cmd.TargetKind;
+                u.AttackId = cmd.TargetId;
+                u.Ordered = true;
+            }
         }
 
         private void ApplyBuild(BuildCommand cmd)
@@ -301,7 +371,7 @@ namespace SimCore
         {
             foreach (Building b in _buildings)
             {
-                if (b.QueueList.Count == 0 || !b.Powered) continue;
+                if (b.Team != TeamPlayer || b.QueueList.Count == 0 || !b.Powered) continue;
 
                 UnitKind kind = b.QueueList[0];
                 if (b.Progress < Defs.Unit(kind).BuildSeconds * TicksPerSecond)
@@ -323,6 +393,228 @@ namespace SimCore
 
                 Unit unit = SpawnUnit(kind, pos);
                 if (b.HasRally) GoTo(unit, b.Rally);
+            }
+        }
+
+        // ------------------------------------------------------------------ combat
+
+        /// <summary>Hands over the shots fired since the last call (for drawing tracers); not part of the game state.</summary>
+        public void DrainShots(List<ShotEvent> into)
+        {
+            into.AddRange(_shots);
+            _shots.Clear();
+        }
+
+        public int CountAlive(int team)
+        {
+            int n = 0;
+            foreach (Unit u in _units) if (u.Team == team && u.Hp > 0) n++;
+            foreach (Building b in _buildings) if (b.Team == team && b.Hp > 0) n++;
+            return n;
+        }
+
+        public bool HasBuilding(BuildingKind kind, int team)
+        {
+            foreach (Building b in _buildings) if (b.Kind == kind && b.Team == team && b.Hp > 0) return true;
+            return false;
+        }
+
+        private static void ClearTarget(Unit u)
+        {
+            u.AttackKind = AttackKind.None;
+            u.AttackId = 0;
+            u.Ordered = false;
+        }
+
+        /// <summary>Position of the target (nearest point for buildings) if it exists, is alive and belongs to the given team.</summary>
+        private bool TargetPosition(AttackKind kind, int id, int team, out Vec2 pos)
+        {
+            pos = default;
+            if (kind == AttackKind.Unit)
+            {
+                Unit t = GetUnit(id);
+                if (t == null || t.Hp <= 0 || t.Team != team) return false;
+                pos = t.Pos;
+                return true;
+            }
+            if (kind == AttackKind.Building)
+            {
+                Building t = GetBuilding(id);
+                if (t == null || t.Hp <= 0 || t.Team != team) return false;
+                pos = new Vec2(Fix64.FromInt(t.X) + Fix64.FromInt(t.Width) * Fix64.Half, Fix64.FromInt(t.Y) + Fix64.FromInt(t.Height) * Fix64.Half);
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>Distance-squared from a point to a building's footprint (0 when inside).</summary>
+        private static Fix64 SqrDistanceToBuilding(Vec2 p, Building b, out Vec2 nearest)
+        {
+            nearest = new Vec2(
+                Fix64.Clamp(p.X, Fix64.FromInt(b.X), Fix64.FromInt(b.X + b.Width)),
+                Fix64.Clamp(p.Y, Fix64.FromInt(b.Y), Fix64.FromInt(b.Y + b.Height)));
+            return (nearest - p).SqrLength;
+        }
+
+        private void Fight()
+        {
+            foreach (Unit u in _units)
+            {
+                if (u.Hp <= 0) continue;
+                if (u.Cooldown > 0) u.Cooldown--;
+                FightStep(u);
+            }
+        }
+
+        private void FightStep(Unit u)
+        {
+            CombatDef def = Defs.Combat(u.Kind);
+            int enemyTeam = 1 - u.Team;
+
+            // Drop a target that is gone.
+            Vec2 targetPos = default;
+            if (u.AttackKind != AttackKind.None && !TargetPosition(u.AttackKind, u.AttackId, enemyTeam, out targetPos))
+                ClearTarget(u);
+
+            // A unit hitting a building answers enemy units that come into its reach (they are the ones shooting back).
+            if (u.AttackKind == AttackKind.Building && (Tick + u.Id) % 5 == 0 && EnemyUnitInReach(u, def, enemyTeam))
+            {
+                ClearTarget(u);
+                Stop(u); // stand and fight: the next step picks the nearest enemy unit
+            }
+
+            // Look for something to shoot: units that stand still (and computer guards, even on patrol) notice enemies.
+            if (u.AttackKind == AttackKind.None && (!u.Moving || u.Guard) && (Tick + u.Id) % 5 == 0)
+                Acquire(u, def, enemyTeam);
+
+            if (u.AttackKind == AttackKind.None)
+            {
+                if (u.Guard) GuardIdle(u);
+                return;
+            }
+
+            // Re-read position of a freshly acquired target.
+            TargetPosition(u.AttackKind, u.AttackId, enemyTeam, out targetPos);
+
+            Vec2 aim = targetPos;
+            Fix64 sqrDist;
+            if (u.AttackKind == AttackKind.Building)
+                sqrDist = SqrDistanceToBuilding(u.Pos, GetBuilding(u.AttackId), out aim);
+            else
+                sqrDist = (targetPos - u.Pos).SqrLength;
+
+            if (sqrDist <= def.Range * def.Range)
+            {
+                if (u.Moving) Stop(u);
+                u.AimPoint = aim;
+                if (u.Cooldown == 0) Fire(u, def, aim);
+                return;
+            }
+
+            // Out of range: give up on automatic targets that got away, otherwise chase.
+            if (!u.Ordered)
+            {
+                Fix64 leash = def.Sight * Fix64.FromFraction(3, 2);
+                bool tooFar = sqrDist > leash * leash;
+                if (u.Guard && (u.Pos - u.Home).SqrLength > GuardLeash * GuardLeash) tooFar = true;
+                if (tooFar) { ClearTarget(u); return; }
+            }
+            if ((Tick + u.Id) % 10 == 0) GoTo(u, targetPos); // re-plan twice a second at most
+        }
+
+        private bool EnemyUnitInReach(Unit u, CombatDef def, int enemyTeam)
+        {
+            Fix64 reach = def.Range * Fix64.FromFraction(3, 2);
+            Fix64 reach2 = reach * reach;
+            foreach (Unit t in _units)
+                if (t.Team == enemyTeam && t.Hp > 0 && (t.Pos - u.Pos).SqrLength <= reach2) return true;
+            return false;
+        }
+
+        private static readonly Fix64 GuardLeash = Fix64.FromInt(14);
+
+        private void Acquire(Unit u, CombatDef def, int enemyTeam)
+        {
+            Fix64 sight2 = def.Sight * def.Sight;
+            Fix64 best = sight2 + Fix64.One;
+            Unit bestUnit = null;
+            foreach (Unit t in _units)
+            {
+                if (t.Team != enemyTeam || t.Hp <= 0) continue;
+                Fix64 d = (t.Pos - u.Pos).SqrLength;
+                if (d <= sight2 && d < best) { best = d; bestUnit = t; }
+            }
+            if (bestUnit != null)
+            {
+                u.SpeedCap = default;
+                u.AttackKind = AttackKind.Unit;
+                u.AttackId = bestUnit.Id;
+                return;
+            }
+
+            Building bestBuilding = null;
+            best = sight2 + Fix64.One;
+            foreach (Building t in _buildings)
+            {
+                if (t.Team != enemyTeam || t.Hp <= 0) continue;
+                Fix64 d = SqrDistanceToBuilding(u.Pos, t, out _);
+                if (d <= sight2 && d < best) { best = d; bestBuilding = t; }
+            }
+            if (bestBuilding != null)
+            {
+                u.SpeedCap = default;
+                u.AttackKind = AttackKind.Building;
+                u.AttackId = bestBuilding.Id;
+            }
+        }
+
+        /// <summary>A guard with nothing to shoot: walk to the next patrol point, or back home.</summary>
+        private void GuardIdle(Unit u)
+        {
+            if (u.Moving) return;
+            if (u.Patrol != null && u.Patrol.Length > 0)
+            {
+                u.PatrolIndex = (u.PatrolIndex + 1) % u.Patrol.Length;
+                GoTo(u, u.Patrol[u.PatrolIndex]);
+            }
+            else if ((u.Pos - u.Home).SqrLength > Fix64.One)
+            {
+                GoTo(u, u.Home);
+            }
+        }
+
+        private void Fire(Unit u, CombatDef def, Vec2 aim)
+        {
+            u.Cooldown = def.CooldownTicks;
+            u.LastShotTick = Tick;
+            _shots.Add(new ShotEvent(u.Pos, aim, u.Kind, u.Team));
+            if (_shots.Count > 512) _shots.RemoveRange(0, 256); // nobody is listening: keep it small
+
+            if (u.AttackKind == AttackKind.Unit) GetUnit(u.AttackId).Hp -= def.Damage;
+            else GetBuilding(u.AttackId).Hp -= def.Damage;
+        }
+
+        /// <summary>Removes everything whose health ran out.</summary>
+        private void RemoveDestroyed()
+        {
+            bool buildingLost = false;
+            for (int i = _buildings.Count - 1; i >= 0; i--)
+            {
+                Building b = _buildings[i];
+                if (b.Hp > 0) continue;
+                for (int cy = b.Y; cy < b.Y + b.Height; cy++)
+                    for (int cx = b.X; cx < b.X + b.Width; cx++)
+                        Map.SetBuilding(cx, cy, 0);
+                _buildings.RemoveAt(i);
+                buildingLost = true;
+            }
+            if (buildingLost) UpdateEconomy();
+
+            for (int i = _units.Count - 1; i >= 0; i--)
+            {
+                if (_units[i].Hp > 0) continue;
+                _unitsById.Remove(_units[i].Id);
+                _units.RemoveAt(i);
             }
         }
 
@@ -368,6 +660,7 @@ namespace SimCore
 
         private static void Stop(Unit u)
         {
+            if (u.AttackKind == AttackKind.None) u.SpeedCap = default;
             u.Path = null;
             u.PathIndex = 0;
             u.Moving = false;
@@ -380,6 +673,7 @@ namespace SimCore
             Vec2 waypoint = u.Path[u.PathIndex];
             Vec2 delta = waypoint - u.Pos;
             Fix64 step = u.StepPerTick;
+            if (u.SpeedCap.Raw > 0 && u.SpeedCap < step) step = u.SpeedCap;
 
             if (delta.SqrLength <= step * step)
             {

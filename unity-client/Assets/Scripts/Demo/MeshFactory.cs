@@ -15,6 +15,18 @@ public static class MeshFactory
         return mesh;
     }
 
+    /// <summary>Thin flat strip along +x from the origin (length 1, width 1 centred on z), for tracers.</summary>
+    public static Mesh Strip()
+    {
+        var mesh = new Mesh { name = "Strip" };
+        mesh.vertices = new[] { new Vector3(0, 0, -0.5f), new Vector3(1, 0, -0.5f), new Vector3(1, 0, 0.5f), new Vector3(0, 0, 0.5f) };
+        mesh.uv = new[] { new Vector2(0, 0), new Vector2(1, 0), new Vector2(1, 1), new Vector2(0, 1) };
+        mesh.triangles = new[] { 0, 2, 1, 0, 3, 2 };
+        mesh.RecalculateNormals();
+        mesh.RecalculateBounds();
+        return mesh;
+    }
+
     /// <summary>Flat ring around the origin at y = 0 (use innerRadius near 0 for a disc).</summary>
     public static Mesh Ring(float innerRadius, float outerRadius, int segments = 28)
     {

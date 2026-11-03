@@ -9,9 +9,8 @@ using UnityEngine;
 /// </summary>
 public sealed class DemoGame : MonoBehaviour
 {
-    public const int MapSize = 64;
-    private const ulong MapSeed = 2026;
-    private static readonly Vector2Int StartCenter = new Vector2Int(26, 26);
+    public const int MapSize = DemoScenario.MapSize;
+    private static readonly Vector2Int StartCenter = new Vector2Int(DemoScenario.StartX, DemoScenario.StartY);
     private const float TickSeconds = 1f / World.TicksPerSecond;
 
     [Header("Materials")]
@@ -33,8 +32,10 @@ public sealed class DemoGame : MonoBehaviour
     private readonly SortedSet<int> _selected = new SortedSet<int>(); // sorted: commands must list ids in a fixed order
     private float _accumulator;
     private TerrainView _terrain;
-    private int _buildingViews;
-    private int _unitViews;
+    private readonly Dictionary<int, GameObject> _buildingObjects = new Dictionary<int, GameObject>();
+    private readonly List<ShotEvent> _shotBuffer = new List<ShotEvent>();
+    private readonly List<int> _removeBuffer = new List<int>();
+    private Material _enemyPalette;
 
     // Selected building (instead of units), and the markers that show it
     private Building _selectedBuilding;
@@ -51,6 +52,7 @@ public sealed class DemoGame : MonoBehaviour
     public RtsCamera Cam { get; private set; }
     public TouchController Touch { get; private set; }
     public int SelectedCount => _selected.Count;
+    public bool IsSelected(int unitId) => _selected.Contains(unitId);
     public string SelfTestStatus { get; private set; }
     public bool BuildOverlayVisible => _terrain != null && _terrain.OverlayVisible;
 
@@ -63,6 +65,12 @@ public sealed class DemoGame : MonoBehaviour
     public Vector2Int PlacingCell { get; private set; }
     public BuildCheck PlacingCheck { get; private set; }
 
+    public enum GameOutcome { Playing, Victory, Defeat }
+
+    /// <summary>Victory when nothing of the enemy is left; defeat when the player's base is destroyed.</summary>
+    public GameOutcome Outcome { get; private set; }
+    public int EnemyCount => World == null ? 0 : World.CountAlive(SimCore.World.TeamEnemy);
+
     /// <summary>1 = real time. Higher values fast-forward the simulation (for testing).</summary>
     public float SimSpeed { get; set; } = 1f;
 
@@ -74,15 +82,16 @@ public sealed class DemoGame : MonoBehaviour
         SelfTestStatus = ok ? "SimCore: OK" : "SimCore FAIL: " + failure;
         Debug.Log("[Demo] " + SelfTestStatus);
 
-        MapGrid map = DemoMap.Generate(MapSize, MapSize, MapSeed, StartCenter.x, StartCenter.y, 6);
-        World = new World(map);
-        World.PlaceBuilding(BuildingKind.Hq, 22, 21); // everything else the player builds
+        World = DemoScenario.Create(); // map, player base and squad, enemy base
+        MapGrid map = World.Map;
+        _enemyPalette = MakeEnemyPalette();
+        Fx.Init(markerMaterial);
 
         _terrain = new GameObject("Terrain").AddComponent<TerrainView>();
         _terrain.Build(map, groundMaterial, overlayMaterial, rockModels, palmModel, cactusModel, bushModel, paletteMaterial, StartCenter, 8);
         SyncBuildingViews();
 
-        SpawnStartingUnits();
+        SyncBuildingViews();
         SyncUnitViews();
 
         Cam = Camera.main.GetComponent<RtsCamera>();
@@ -90,46 +99,99 @@ public sealed class DemoGame : MonoBehaviour
         Touch = new TouchController(Cam, this);
     }
 
-    /// <summary>Creates a model for every building the simulation has that has no model yet.</summary>
+    /// <summary>Keeps one model per building: creates missing ones, removes those whose building was destroyed.</summary>
     private void SyncBuildingViews()
     {
-        if (_buildingViews == World.Buildings.Count) return;
-        while (_buildingViews < World.Buildings.Count)
-            SpawnBuildingView(World.Buildings[_buildingViews++]);
-        if (_terrain.OverlayVisible) _terrain.RefreshOverlay();
+        bool changed = false;
+        foreach (Building b in World.Buildings)
+        {
+            if (_buildingObjects.ContainsKey(b.Id)) continue;
+            _buildingObjects[b.Id] = SpawnBuildingView(b);
+            changed = true;
+        }
+
+        if (_buildingObjects.Count != World.Buildings.Count)
+        {
+            _removeBuffer.Clear();
+            foreach (int id in _buildingObjects.Keys)
+                if (World.GetBuilding(id) == null) _removeBuffer.Add(id);
+            foreach (int id in _removeBuffer)
+            {
+                Fx.Explosion(_buildingObjects[id].transform.position, 5f);
+                Destroy(_buildingObjects[id]);
+                _buildingObjects.Remove(id);
+                changed = true;
+            }
+        }
+        if (changed && _terrain.OverlayVisible) _terrain.RefreshOverlay();
     }
 
-    /// <summary>Creates a view for every unit the simulation has that has none yet (units are only ever added, for now).</summary>
+    /// <summary>Keeps one view per unit: creates missing ones, removes (with a small explosion) those that died.</summary>
     private void SyncUnitViews()
     {
-        while (_unitViews < World.Units.Count)
+        if (_views.Count != World.Units.Count)
         {
-            Unit unit = World.Units[_unitViews++];
-            _views[unit.Id] = UnitView.Create(unit, unitModels[(int)unit.Kind], paletteMaterial, ringMaterial);
+            foreach (Unit unit in World.Units)
+                if (!_views.ContainsKey(unit.Id))
+                    _views[unit.Id] = UnitView.Create(unit, unitModels[(int)unit.Kind],
+                        unit.Team == SimCore.World.TeamEnemy ? _enemyPalette : paletteMaterial, ringMaterial);
+
+            _removeBuffer.Clear();
+            foreach (int id in _views.Keys)
+                if (World.GetUnit(id) == null) _removeBuffer.Add(id);
+            foreach (int id in _removeBuffer)
+            {
+                Fx.Explosion(_views[id].transform.position, 1.6f);
+                Destroy(_views[id].gameObject);
+                _views.Remove(id);
+                _selected.Remove(id);
+            }
         }
     }
 
-    private void SpawnBuildingView(Building b)
+    private GameObject SpawnBuildingView(Building b)
     {
         GameObject go = Instantiate(buildingModels[(int)b.Kind], transform);
         go.name = "Building " + b.Kind;
         // The model is centred on its footprint.
         go.transform.position = new Vector3(b.X + b.Width / 2f, 0f, b.Y + b.Height / 2f);
-        foreach (Renderer r in go.GetComponentsInChildren<Renderer>()) r.sharedMaterial = paletteMaterial;
+        Material mat = b.Team == SimCore.World.TeamEnemy ? _enemyPalette : paletteMaterial;
+        foreach (Renderer r in go.GetComponentsInChildren<Renderer>()) r.sharedMaterial = mat;
+        return go;
     }
 
-    private void SpawnStartingUnits()
+    /// <summary>The shared palette with its blues turned red, so the enemy is easy to tell apart.</summary>
+    private Material MakeEnemyPalette()
     {
-        // Three of each kind: one column per kind, south of the base (inside the cleared start area).
-        UnitKind[] order = { UnitKind.Rifleman, UnitKind.RocketTrooper, UnitKind.Jeep, UnitKind.Tank };
-        for (int col = 0; col < order.Length; col++)
+        var source = (Texture2D)paletteMaterial.GetTexture("_BaseMap");
+
+        // Copy through a render texture: works whether or not the imported texture is marked readable.
+        RenderTexture rt = RenderTexture.GetTemporary(source.width, source.height, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB);
+        Graphics.Blit(source, rt);
+        RenderTexture previous = RenderTexture.active;
+        RenderTexture.active = rt;
+        var copy = new Texture2D(source.width, source.height, TextureFormat.RGBA32, false);
+        copy.ReadPixels(new Rect(0, 0, source.width, source.height), 0, 0);
+        copy.Apply();
+        RenderTexture.active = previous;
+        RenderTexture.ReleaseTemporary(rt);
+
+        var pixels = copy.GetPixels32();
+        Destroy(copy);
+        for (int i = 0; i < pixels.Length; i++)
         {
-            for (int i = 0; i < 3; i++)
-            {
-                var pos = new Vec2(Fix64.FromInt(23 + col * 2) + Fix64.Half, Fix64.FromInt(30 + i) + Fix64.Half);
-                World.SpawnUnit(order[col], pos);
-            }
+            Color32 c = pixels[i];
+            if (c.b > c.r + 25 && c.b > c.g + 5) pixels[i] = new Color32(c.b, c.g, c.r, c.a);
         }
+        var tex = new Texture2D(source.width, source.height, TextureFormat.RGBA32, false)
+        { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp };
+        tex.SetPixels32(pixels);
+        tex.Apply();
+
+        var mat = new Material(paletteMaterial);
+        mat.SetTexture("_BaseMap", tex);
+        mat.mainTexture = tex;
+        return mat;
     }
 
     private void Update()
@@ -148,12 +210,31 @@ public sealed class DemoGame : MonoBehaviour
 
         SyncBuildingViews();
         SyncUnitViews();
+        if (_selectedBuilding != null && World.GetBuilding(_selectedBuilding.Id) == null) _selectedBuilding = null;
         UpdateGhost();
         UpdateSelectionMarkers();
+        UpdateOutcome();
+
+        // Bullet tracers for the shots fired in the ticks just simulated.
+        _shotBuffer.Clear();
+        World.DrainShots(_shotBuffer);
+        foreach (ShotEvent shot in _shotBuffer)
+            Fx.Tracer(UnitView.ToUnity(shot.From), UnitView.ToUnity(shot.To), shot.Kind == UnitKind.RocketTrooper || shot.Kind == UnitKind.Tank, shot.Team == SimCore.World.TeamEnemy);
 
         float alpha = _accumulator / TickSeconds;
         foreach (UnitView view in _views.Values)
-            view.Refresh(alpha, _selected.Contains(view.UnitId));
+        {
+            Unit u = World.GetUnit(view.UnitId);
+            bool aiming = u != null && World.Tick - u.LastShotTick < 8;
+            view.Refresh(alpha, _selected.Contains(view.UnitId), aiming);
+        }
+    }
+
+    private void UpdateOutcome()
+    {
+        if (Outcome != GameOutcome.Playing) return;
+        if (!World.HasBuilding(BuildingKind.Hq, SimCore.World.TeamPlayer)) Outcome = GameOutcome.Defeat;
+        else if (EnemyCount == 0) Outcome = GameOutcome.Victory;
     }
 
     // ---- player actions (called by TouchController and the HUD) ----
@@ -177,11 +258,25 @@ public sealed class DemoGame : MonoBehaviour
             return;
         }
 
-        int unitId = PickUnit(screen);
-        if (unitId == -1 && Cam.GroundPoint(screen, out Vector3 spot2))
+        int unitId = PickUnit(screen, SimCore.World.TeamPlayer);
+
+        // Tapping an enemy with units selected = attack order.
+        if (unitId == -1 && _selected.Count > 0)
         {
-            Building hit = BuildingAt(spot2);
-            if (hit != null)
+            int enemyId = PickUnit(screen, SimCore.World.TeamEnemy);
+            if (enemyId != -1) { OrderAttack(AttackKind.Unit, enemyId, World.GetUnit(enemyId).Pos); return; }
+
+            if (PickBuilding(screen) is Building target && target.Team == SimCore.World.TeamEnemy)
+            {
+                OrderAttack(AttackKind.Building, target.Id, new Vec2(Fix64.FromInt(target.X + target.Width / 2), Fix64.FromInt(target.Y + target.Height / 2)));
+                return;
+            }
+        }
+
+        if (unitId == -1)
+        {
+            Building hit = PickBuilding(screen);
+            if (hit != null && hit.Team == SimCore.World.TeamPlayer)
             {
                 _selected.Clear();
                 _selectedBuilding = hit;
@@ -221,6 +316,7 @@ public sealed class DemoGame : MonoBehaviour
         _selected.Clear();
         foreach (UnitView view in _views.Values)
         {
+            if (view.Team != SimCore.World.TeamPlayer) continue;
             Vector3 sp = Cam.Camera.WorldToScreenPoint(view.transform.position);
             if (sp.z > 0f && screenRect.Contains(sp)) _selected.Add(view.UnitId);
         }
@@ -230,7 +326,8 @@ public sealed class DemoGame : MonoBehaviour
     {
         _selectedBuilding = null;
         _selected.Clear();
-        foreach (int id in _views.Keys) _selected.Add(id);
+        foreach (UnitView view in _views.Values)
+            if (view.Team == SimCore.World.TeamPlayer) _selected.Add(view.UnitId);
     }
 
     public void ClearSelection()
@@ -258,12 +355,26 @@ public sealed class DemoGame : MonoBehaviour
 
     public void BeginSetRally() => SettingRally = _selectedBuilding != null;
 
-    private Building BuildingAt(Vector3 ground)
+    /// <summary>
+    /// The building under a screen point. Uses the building's 3D volume, not its footprint on the ground:
+    /// the camera looks down at an angle, so a tap on a roof lands on the ground behind the building.
+    /// </summary>
+    private Building PickBuilding(Vector2 screen)
     {
-        int x = Mathf.FloorToInt(ground.x), y = Mathf.FloorToInt(ground.z);
-        if (!World.Map.InBounds(x, y)) return null;
-        int id = World.Map.BuildingAt(x, y);
-        return id == 0 ? null : World.GetBuilding(id);
+        Ray ray = Cam.Camera.ScreenPointToRay(screen);
+        Building best = null;
+        float bestDistance = float.MaxValue;
+        foreach (Building b in World.Buildings)
+        {
+            const float height = 3.2f;
+            var bounds = new Bounds(new Vector3(b.X + b.Width / 2f, height / 2f, b.Y + b.Height / 2f), new Vector3(b.Width, height, b.Height));
+            if (bounds.IntersectRay(ray, out float distance) && distance < bestDistance)
+            {
+                bestDistance = distance;
+                best = b;
+            }
+        }
+        return best;
     }
 
     /// <summary>Yellow footprint under the selected building, and a ring where its units gather.</summary>
@@ -355,16 +466,25 @@ public sealed class DemoGame : MonoBehaviour
         TapMarker.Spawn(ground, markerMaterial);
     }
 
+    private void OrderAttack(AttackKind kind, int targetId, Vec2 targetPos)
+    {
+        var ids = new int[_selected.Count];
+        _selected.CopyTo(ids);
+        World.Enqueue(new AttackCommand(ids, kind, targetId));
+        TapMarker.Spawn(UnitView.ToUnity(targetPos), markerMaterial);
+    }
+
     private static Vec2 ToVec2(Vector3 ground) => new Vec2(
         Fix64.FromFraction(Mathf.RoundToInt(ground.x * 16f), 16),
         Fix64.FromFraction(Mathf.RoundToInt(ground.z * 16f), 16));
 
-    private int PickUnit(Vector2 screen)
+    private int PickUnit(Vector2 screen, int team)
     {
         float bestSqr = Mathf.Pow(Screen.height * 0.07f, 2f);
         int best = -1;
         foreach (UnitView view in _views.Values)
         {
+            if (view.Team != team) continue;
             Vector3 sp = Cam.Camera.WorldToScreenPoint(view.transform.position + Vector3.up * 0.5f);
             if (sp.z <= 0f) continue;
             float d = ((Vector2)sp - screen).sqrMagnitude;

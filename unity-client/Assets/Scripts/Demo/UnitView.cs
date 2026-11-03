@@ -12,6 +12,7 @@ public sealed class UnitView : MonoBehaviour
     private Quaternion _facing = Quaternion.identity;
 
     public int UnitId => _unit.Id;
+    public int Team => _unit.Team;
 
     public static UnitView Create(Unit unit, GameObject model, Material palette, Material ringMaterial)
     {
@@ -30,18 +31,24 @@ public sealed class UnitView : MonoBehaviour
         view._selectionRing.transform.localPosition = new Vector3(0f, 0.06f, 0f);
         view._selectionRing.SetActive(false);
 
-        view.Refresh(0f, false);
+        view.Refresh(0f, false, false);
         return view;
     }
 
-    public void Refresh(float alpha, bool selected)
+    public void Refresh(float alpha, bool selected, bool aiming)
     {
         Vector3 from = ToUnity(_unit.PrevPos);
         Vector3 to = ToUnity(_unit.Pos);
         transform.position = Vector3.Lerp(from, to, alpha);
 
         Vector3 moved = to - from;
-        if (moved.sqrMagnitude > 1e-8f)
+        if (aiming)
+        {
+            Vector3 toAim = ToUnity(_unit.AimPoint) - to;
+            toAim.y = 0f;
+            if (toAim.sqrMagnitude > 1e-6f) _facing = Quaternion.LookRotation(toAim);
+        }
+        else if (moved.sqrMagnitude > 1e-8f)
             _facing = Quaternion.LookRotation(moved);
         transform.rotation = Quaternion.Slerp(transform.rotation, _facing, 1f - Mathf.Exp(-12f * Time.deltaTime));
 

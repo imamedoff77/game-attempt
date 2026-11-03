@@ -49,6 +49,7 @@ public sealed class DemoHud : MonoBehaviour
         DrawStats(world);
         DrawUnpoweredIcons(world);
         DrawProductionBars(world);
+        DrawHealthBars(world);
 
         // Top-right: build menu button and simulation speed.
         Rect[] top = TopRects();
@@ -84,6 +85,8 @@ public sealed class DemoHud : MonoBehaviour
             if (GUI.Button(r[3], "Ləğv et", _button)) _game.ClearSelection();
         }
 
+        DrawOutcome();
+
         if (_game.Touch.BoxRect.HasValue)
         {
             Rect b = _game.Touch.BoxRect.Value;
@@ -115,7 +118,7 @@ public sealed class DemoHud : MonoBehaviour
         }
         GUI.Label(new Rect(pad, pad + line, Screen.width * 0.5f, line), energy, energyStyle);
 
-        string info = $"FPS {1f / _smoothedDelta:0}   Units {world.Units.Count}   Selected {_game.SelectedCount}   {_game.SelfTestStatus}";
+        string info = $"FPS {1f / _smoothedDelta:0}   Units {world.Units.Count}   Selected {_game.SelectedCount}   Düşmən {_game.EnemyCount}   {_game.SelfTestStatus}";
         GUI.Label(new Rect(pad, pad + line * 2f, Screen.width * 0.6f, line), info, _label);
     }
 
@@ -213,6 +216,54 @@ public sealed class DemoHud : MonoBehaviour
             GUI.DrawTexture(new Rect(back.x, back.y, back.width * Percent(b) / 100f, back.height), Texture2D.whiteTexture);
             GUI.color = old;
         }
+    }
+
+    /// <summary>Health bars over damaged (or selected) units and damaged buildings. Green = yours, red = enemy.</summary>
+    private void DrawHealthBars(World world)
+    {
+        if (_game.Cam == null) return;
+        Camera cam = _game.Cam.Camera;
+        float h = Screen.height * 0.011f;
+
+        foreach (Unit u in world.Units)
+        {
+            if (u.Hp >= u.MaxHp && !_game.IsSelected(u.Id)) continue;
+            Vector3 sp = cam.WorldToScreenPoint(new Vector3(u.Pos.X.ToFloat(), 1.4f, u.Pos.Y.ToFloat()));
+            if (sp.z <= 0f) continue;
+            DrawBar(sp, Screen.height * 0.06f, h, (float)u.Hp / u.MaxHp, u.Team);
+        }
+        foreach (Building b in world.Buildings)
+        {
+            if (b.Hp >= b.MaxHp) continue;
+            Vector3 sp = cam.WorldToScreenPoint(new Vector3(b.X + b.Width / 2f, 2.2f, b.Y + b.Height / 2f));
+            if (sp.z <= 0f) continue;
+            DrawBar(sp, Screen.height * 0.12f, h, (float)b.Hp / b.MaxHp, b.Team);
+        }
+    }
+
+    private static void DrawBar(Vector3 screenPoint, float width, float height, float fraction, int team)
+    {
+        var back = new Rect(screenPoint.x - width / 2f, Screen.height - screenPoint.y - height / 2f, width, height);
+        Color old = GUI.color;
+        GUI.color = new Color(0f, 0f, 0f, 0.75f);
+        GUI.DrawTexture(back, Texture2D.whiteTexture);
+        GUI.color = team == World.TeamPlayer ? new Color(0.3f, 0.95f, 0.4f) : new Color(1f, 0.3f, 0.25f);
+        GUI.DrawTexture(new Rect(back.x, back.y, back.width * Mathf.Clamp01(fraction), back.height), Texture2D.whiteTexture);
+        GUI.color = old;
+    }
+
+    private void DrawOutcome()
+    {
+        if (_game.Outcome == DemoGame.GameOutcome.Playing) return;
+        bool won = _game.Outcome == DemoGame.GameOutcome.Victory;
+        var style = new GUIStyle(_stats)
+        {
+            alignment = TextAnchor.MiddleCenter,
+            fontSize = Mathf.RoundToInt(Screen.height * 0.08f),
+        };
+        style.normal.textColor = won ? new Color(0.5f, 1f, 0.55f) : new Color(1f, 0.45f, 0.4f);
+        var rect = new Rect(0f, Screen.height * 0.3f, Screen.width, Screen.height * 0.2f);
+        GUI.Label(rect, won ? "QƏLƏBƏ! Düşmən məhv edildi" : "MƏĞLUBİYYƏT: baza məhv oldu", style);
     }
 
     private void DrawHint(string text)

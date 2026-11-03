@@ -6,6 +6,11 @@ namespace SimCore
     {
         public int Id { get; }
         public BuildingKind Kind { get; }
+        /// <summary>0 = player, 1 = enemy.</summary>
+        public int Team { get; }
+
+        public int Hp { get; internal set; }
+        public int MaxHp { get; }
 
         /// <summary>Top-left cell of the footprint, and its size in cells.</summary>
         public int X { get; }
@@ -32,9 +37,9 @@ namespace SimCore
 
         internal int Spawned;
 
-        internal Building(int id, BuildingKind kind, int x, int y, int width, int height, int output)
+        internal Building(int id, BuildingKind kind, int team, int x, int y, int width, int height, int output)
         {
-            Id = id; Kind = kind; X = x; Y = y; Width = width; Height = height; Output = output;
+            Id = id; Kind = kind; Team = team; MaxHp = Hp = Defs.BuildingHp(kind); X = x; Y = y; Width = width; Height = height; Output = output;
         }
 
         public bool Contains(int cellX, int cellY) =>

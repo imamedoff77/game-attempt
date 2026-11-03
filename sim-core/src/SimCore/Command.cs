@@ -69,4 +69,17 @@ namespace SimCore
             BuildingId = buildingId; Point = point;
         }
     }
+
+    /// <summary>Order to attack an enemy unit or building. Units walk into range and keep shooting until it is destroyed.</summary>
+    public sealed class AttackCommand : Command
+    {
+        public int[] UnitIds { get; }
+        public AttackKind TargetKind { get; }
+        public int TargetId { get; }
+
+        public AttackCommand(int[] unitIds, AttackKind targetKind, int targetId)
+        {
+            UnitIds = unitIds; TargetKind = targetKind; TargetId = targetId;
+        }
+    }
 }

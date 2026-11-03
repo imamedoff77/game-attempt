@@ -8,6 +8,26 @@ namespace SimCore
 
     public enum BuildingKind { Hq, PowerPlant, SupplyCenter, Barracks, VehicleFactory }
 
+    public enum AttackKind { None, Unit, Building }
+
+    /// <summary>Fighting stats of a unit kind.</summary>
+    public readonly struct CombatDef
+    {
+        public int Hp { get; }
+        public int Damage { get; }
+        /// <summary>Shooting distance in map units.</summary>
+        public Fix64 Range { get; }
+        /// <summary>Ticks between shots.</summary>
+        public int CooldownTicks { get; }
+        /// <summary>How far it notices enemies, in map units.</summary>
+        public Fix64 Sight { get; }
+
+        public CombatDef(int hp, int damage, int range, int cooldownTicks, int sight)
+        {
+            Hp = hp; Damage = damage; Range = Fix64.FromInt(range); CooldownTicks = cooldownTicks; Sight = Fix64.FromInt(sight);
+        }
+    }
+
     public enum QueueCheck { Ok, NotAllowed, QueueFull, NotEnoughResources }
 
     public enum BuildCheck { Ok, NotAllowed, BadGround, UnitInWay, NotEnoughResources }
@@ -60,6 +80,32 @@ namespace SimCore
                 case UnitKind.RocketTrooper: return new UnitDef(kind, UnitClass.Infantry, "Raketçi", Fix64.FromFraction(5, 2), 80, 6, BuildingKind.Barracks);
                 case UnitKind.Jeep: return new UnitDef(kind, UnitClass.Vehicle, "Cip", Fix64.FromInt(6), 150, 8, BuildingKind.VehicleFactory);
                 case UnitKind.Tank: return new UnitDef(kind, UnitClass.Vehicle, "Tank", Fix64.FromInt(2), 300, 15, BuildingKind.VehicleFactory);
+                default: throw new ArgumentOutOfRangeException(nameof(kind));
+            }
+        }
+
+        /// <summary>Placeholder fighting numbers.</summary>
+        public static CombatDef Combat(UnitKind kind)
+        {
+            switch (kind)
+            {
+                case UnitKind.Rifleman: return new CombatDef(60, 6, 5, 10, 9);
+                case UnitKind.RocketTrooper: return new CombatDef(50, 25, 7, 30, 9);
+                case UnitKind.Jeep: return new CombatDef(100, 8, 6, 8, 10);
+                case UnitKind.Tank: return new CombatDef(400, 40, 8, 30, 11);
+                default: throw new ArgumentOutOfRangeException(nameof(kind));
+            }
+        }
+
+        public static int BuildingHp(BuildingKind kind)
+        {
+            switch (kind)
+            {
+                case BuildingKind.Hq: return 1500;
+                case BuildingKind.PowerPlant: return 400;
+                case BuildingKind.SupplyCenter: return 600;
+                case BuildingKind.Barracks: return 700;
+                case BuildingKind.VehicleFactory: return 900;
                 default: throw new ArgumentOutOfRangeException(nameof(kind));
             }
         }
