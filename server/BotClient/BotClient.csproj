@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>BotClient</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\..\sim-core\src\SimCore\Resources\gamedata.json" Link="gamedata.json" CopyToOutputDirectory="PreserveNewest" />
+    <Compile Include="..\..\sim-core\tests\Shared\MatchBot.cs" Link="MatchBot.cs" />
+    <ProjectReference Include="..\..\sim-core\src\SimCore\SimCore.csproj" />
+  </ItemGroup>
+
+</Project>
