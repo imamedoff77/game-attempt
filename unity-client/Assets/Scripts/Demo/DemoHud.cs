@@ -59,7 +59,7 @@ public sealed class DemoHud : MonoBehaviour
         GUI.enabled = !_game.Placing;
         if (GUI.Button(top[0], Strings.Get(_menuOpen ? "menu.buildClose" : "menu.build"), _button)) _menuOpen = !_menuOpen;
         GUI.enabled = true;
-        for (int i = 0; i < Speeds.Length; i++)
+        for (int i = 0; i < Speeds.Length && !_game.OnlineMatch; i++) // everybody plays at normal speed online
         {
             string text = (_game.SimSpeed == Speeds[i] ? "[x" + Speeds[i] + "]" : "x" + Speeds[i]);
             if (GUI.Button(top[i + 1], text, _button)) _game.SimSpeed = Speeds[i];
@@ -88,6 +88,7 @@ public sealed class DemoHud : MonoBehaviour
         }
 
         DrawOutcome();
+        DrawOnlineBanner();
 
         if (_game.Touch.BoxRect.HasValue)
         {
@@ -107,12 +108,13 @@ public sealed class DemoHud : MonoBehaviour
         float pad = Screen.height * 0.02f;
         float line = Screen.height * 0.055f;
 
-        string resources = Strings.Get("hud.resources", world.Resources, world.IncomePerMinute);
-        string energy = Strings.Get("hud.energy", world.EnergyUsed, world.EnergyCapacity);
+        PlayerState me = world.Player(_game.LocalTeam);
+        string resources = Strings.Get("hud.resources", me.Resources, me.IncomePerMinute);
+        string energy = Strings.Get("hud.energy", me.EnergyUsed, me.EnergyCapacity);
         GUI.Label(new Rect(pad, pad, Screen.width * 0.5f, line), resources, _stats);
 
         GUIStyle energyStyle = _stats;
-        if (world.EnergyShortage)
+        if (me.EnergyShortage)
         {
             energyStyle = new GUIStyle(_stats);
             energyStyle.normal.textColor = new Color(1f, 0.4f, 0.35f);
@@ -128,8 +130,8 @@ public sealed class DemoHud : MonoBehaviour
         {
             BuildingKind kind = Buildable[i];
             BuildingDef def = Defs.Building(kind);
-            GUI.enabled = world.Resources >= def.Cost;
-            if (GUI.Button(items[i], $"{Strings.BuildingName(kind)}  -  {def.Cost}\n{Describe(world, kind, def)}", _button))
+            GUI.enabled = world.Player(_game.LocalTeam).Resources >= def.Cost;
+            if (GUI.Button(items[i], $"{Strings.BuildingName(kind)}  -  {def.Cost}\n{Describe(world, _game.LocalTeam, kind, def)}", _button))
             {
                 _menuOpen = false;
                 _game.BeginPlacement(kind);
@@ -138,12 +140,12 @@ public sealed class DemoHud : MonoBehaviour
         GUI.enabled = true;
     }
 
-    private static string Describe(World world, BuildingKind kind, BuildingDef def)
+    private static string Describe(World world, int team, BuildingKind kind, BuildingDef def)
     {
         switch (kind)
         {
-            case BuildingKind.PowerPlant: return Strings.Get("menu.energyPlus", world.NextOutput(kind));
-            case BuildingKind.SupplyCenter: return Strings.Get("menu.energyMinusIncome", def.EnergyUse, world.NextOutput(kind));
+            case BuildingKind.PowerPlant: return Strings.Get("menu.energyPlus", world.NextOutput(kind, team));
+            case BuildingKind.SupplyCenter: return Strings.Get("menu.energyMinusIncome", def.EnergyUse, world.NextOutput(kind, team));
             default: return Strings.Get("menu.energyMinus", def.EnergyUse);
         }
     }
@@ -203,7 +205,7 @@ public sealed class DemoHud : MonoBehaviour
         float w = Screen.height * 0.12f, h = Screen.height * 0.014f;
         foreach (Building b in world.Buildings)
         {
-            if (b.Queue.Count == 0) continue;
+            if (b.Queue.Count == 0 || b.Team != _game.LocalTeam) continue;
             Vector3 sp = _game.Cam.Camera.WorldToScreenPoint(new Vector3(b.X + b.Width / 2f, 0.2f, b.Y + b.Height / 2f));
             if (sp.z <= 0f) continue;
             var back = new Rect(sp.x - w / 2f, Screen.height - sp.y - h / 2f, w, h);
@@ -228,24 +230,24 @@ public sealed class DemoHud : MonoBehaviour
             if (u.Hp >= u.MaxHp && !_game.IsSelected(u.Id)) continue;
             Vector3 sp = cam.WorldToScreenPoint(new Vector3(u.Pos.X.ToFloat(), 1.4f, u.Pos.Y.ToFloat()));
             if (sp.z <= 0f) continue;
-            DrawBar(sp, Screen.height * 0.06f, h, (float)u.Hp / u.MaxHp, u.Team);
+            DrawBar(sp, Screen.height * 0.06f, h, (float)u.Hp / u.MaxHp, u.Team == _game.LocalTeam);
         }
         foreach (Building b in world.Buildings)
         {
             if (b.Hp >= b.MaxHp) continue;
             Vector3 sp = cam.WorldToScreenPoint(new Vector3(b.X + b.Width / 2f, 2.2f, b.Y + b.Height / 2f));
             if (sp.z <= 0f) continue;
-            DrawBar(sp, Screen.height * 0.12f, h, (float)b.Hp / b.MaxHp, b.Team);
+            DrawBar(sp, Screen.height * 0.12f, h, (float)b.Hp / b.MaxHp, b.Team == _game.LocalTeam);
         }
     }
 
-    private static void DrawBar(Vector3 screenPoint, float width, float height, float fraction, int team)
+    private static void DrawBar(Vector3 screenPoint, float width, float height, float fraction, bool mine)
     {
         var back = new Rect(screenPoint.x - width / 2f, Screen.height - screenPoint.y - height / 2f, width, height);
         Color old = GUI.color;
         GUI.color = new Color(0f, 0f, 0f, 0.75f);
         GUI.DrawTexture(back, Texture2D.whiteTexture);
-        GUI.color = team == World.TeamPlayer ? new Color(0.3f, 0.95f, 0.4f) : new Color(1f, 0.3f, 0.25f);
+        GUI.color = mine ? new Color(0.3f, 0.95f, 0.4f) : new Color(1f, 0.3f, 0.25f);
         GUI.DrawTexture(new Rect(back.x, back.y, back.width * Mathf.Clamp01(fraction), back.height), Texture2D.whiteTexture);
         GUI.color = old;
     }
@@ -262,6 +264,27 @@ public sealed class DemoHud : MonoBehaviour
         style.normal.textColor = won ? new Color(0.5f, 1f, 0.55f) : new Color(1f, 0.45f, 0.4f);
         var rect = new Rect(0f, Screen.height * 0.3f, Screen.width, Screen.height * 0.2f);
         GUI.Label(rect, Strings.Get(won ? "outcome.victory" : "outcome.defeat"), style);
+    }
+
+    /// <summary>One line in the middle of the top edge when the network needs the player's attention.</summary>
+    private void DrawOnlineBanner()
+    {
+        if (!_game.OnlineMatch) return;
+        OnlineSession online = _game.Online;
+        string text = null;
+        if (online == null) text = Strings.Get("online.connectionLost");
+        else if (online.Reconnecting) text = Strings.Get("online.reconnecting");
+        else if (online.Client != null && online.Client.CatchingUp) text = Strings.Get("online.catchingUp");
+        else if (online.Client == null) text = null;
+        else if (online.Client.Desynced) text = Strings.Get("online.desync");
+        else if (online.OpponentLeft) text = Strings.Get("online.opponentLeft");
+        else if (online.State == OnlineSession.Phase.Ended) text = Strings.Get("online.connectionLost");
+        else if (online.Client.Waiting) text = Strings.Get("online.waitingNetwork");
+        if (text == null) return;
+
+        var style = new GUIStyle(_stats) { alignment = TextAnchor.MiddleCenter, fontSize = Mathf.RoundToInt(Screen.height * 0.045f) };
+        style.normal.textColor = new Color(1f, 0.8f, 0.3f);
+        GUI.Label(new Rect(0f, Screen.height * 0.12f, Screen.width, Screen.height * 0.08f), text, style);
     }
 
     private void DrawHint(string text)
@@ -298,7 +321,7 @@ public sealed class DemoHud : MonoBehaviour
         float size = Screen.height * 0.075f;
         foreach (Building b in world.Buildings)
         {
-            if (b.Powered) continue;
+            if (b.Powered || b.Team != _game.LocalTeam) continue;
             Vector3 world3 = new Vector3(b.X + b.Width / 2f, 1.8f, b.Y + b.Height / 2f);
             Vector3 sp = _game.Cam.Camera.WorldToScreenPoint(world3);
             if (sp.z <= 0f) continue;

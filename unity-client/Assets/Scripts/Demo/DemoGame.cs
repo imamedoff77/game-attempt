@@ -84,7 +84,17 @@ public sealed class DemoGame : MonoBehaviour
 
     /// <summary>Victory when nothing of the enemy is left; defeat when the player's base is destroyed.</summary>
     public GameOutcome Outcome { get; private set; }
-    public int EnemyCount => World == null ? 0 : World.CountAlive(SimCore.World.TeamEnemy);
+    public int EnemyCount => World == null ? 0 : World.CountAlive(OpponentTeam);
+
+    /// <summary>The team this screen plays (always 0 against the computer; 0 or 1 online).</summary>
+    public int LocalTeam { get; private set; } = SimCore.World.TeamPlayer;
+    public int OpponentTeam => 1 - LocalTeam;
+
+    /// <summary>Set while an online connection exists (lobby or match).</summary>
+    public OnlineSession Online { get; private set; }
+    /// <summary>True from the moment the online match starts: the world then moves only through the lockstep engine.</summary>
+    public bool OnlineMatch { get; private set; }
+    private Vector2Int _home = StartCenter;
 
     /// <summary>1 = real time. Higher values fast-forward the simulation (for testing).</summary>
     public float SimSpeed { get; set; } = 1f;
@@ -97,22 +107,80 @@ public sealed class DemoGame : MonoBehaviour
         SelfTestStatus = ok ? "SimCore: OK" : "SimCore FAIL: " + failure;
         Debug.Log("[Demo] " + SelfTestStatus);
 
-        World = DemoScenario.Create(); // map, player base and squad, enemy base
-        MapGrid map = World.Map;
         _enemyPalette = MakeEnemyPalette();
         _arcMaterial = new Material(overlayMaterial) { color = new Color(0.4f, 0.85f, 1f, 0.22f) };
         Fx.Init(markerMaterial);
 
-        _terrain = new GameObject("Terrain").AddComponent<TerrainView>();
-        _terrain.Build(map, groundMaterial, overlayMaterial, rockModels, palmModel, cactusModel, bushModel, paletteMaterial, StartCenter, 8);
-        SyncBuildingViews();
+        Cam = Camera.main.GetComponent<RtsCamera>();
+        LoadWorld(DemoScenario.Create(), StartCenter, 0); // map, player base and squad, enemy base
+        Touch = new TouchController(Cam, this);
+    }
 
+    /// <summary>Shows a (new) world: terrain, views and camera. The old world, if any, is thrown away.</summary>
+    private void LoadWorld(World world, Vector2Int home, int localTeam)
+    {
+        CancelPlacement();
+        ClearSelection();
+        foreach (UnitView v in _views.Values) Destroy(v.gameObject);
+        _views.Clear();
+        foreach (GameObject go in _buildingObjects.Values) Destroy(go);
+        _buildingObjects.Clear();
+        if (_terrain != null) Destroy(_terrain.gameObject);
+
+        World = world;
+        LocalTeam = localTeam;
+        _home = home;
+        Outcome = GameOutcome.Playing;
+
+        _terrain = new GameObject("Terrain").AddComponent<TerrainView>();
+        _terrain.Build(World.Map, groundMaterial, overlayMaterial, rockModels, palmModel, cactusModel, bushModel, paletteMaterial, home, 8);
         SyncBuildingViews();
         SyncUnitViews();
+        Cam.Init(new Vector3(home.x, 0f, home.y + 2f), MapSize);
+    }
 
-        Cam = Camera.main.GetComponent<RtsCamera>();
-        Cam.Init(new Vector3(StartCenter.x, 0f, StartCenter.y + 2f), MapSize);
-        Touch = new TouchController(Cam, this);
+    // ---- online ----
+
+    public void HostOnline(string address) => StartOnline(OnlineSession.Host(address));
+    public void JoinOnline(string address, string code) => StartOnline(OnlineSession.Join(address, code));
+
+    private void StartOnline(OnlineSession session)
+    {
+        LeaveOnline();
+        Online = session;
+    }
+
+    /// <summary>Closes the connection. A match in progress stays on screen frozen; use the debug panel to start something new.</summary>
+    public void LeaveOnline()
+    {
+        Online?.Leave();
+        Online = null;
+    }
+
+    /// <summary>Builds the starting world of an online match (also after a reconnect: the server then replays everything played so far).</summary>
+    private void BeginOnlineMatch(int team, System.Action<World> attach)
+    {
+        World world = OnlineScenario.Create();
+        Vec2 hq = Vec2.Zero;
+        foreach (Building b in world.Buildings)
+            if (b.Kind == BuildingKind.Hq && b.Team == team) hq = new Vec2(Fix64.FromInt(b.X), Fix64.FromInt(b.Y));
+        var home = new Vector2Int(hq.X.ToInt(), hq.Y.ToInt());
+        LoadWorld(world, home, team);
+        attach(world);
+        OnlineMatch = true;
+        SimSpeed = 1f;
+        _accumulator = 0f;
+    }
+
+    /// <summary>Every command goes through here. Online it is sent to the server and played when both players have it.</summary>
+    private void Issue(Command command)
+    {
+        if (OnlineMatch)
+        {
+            // While reconnecting or replaying the screen shows an old situation: orders given now would make no sense.
+            if (Online?.Client != null && !Online.Reconnecting && !Online.Client.CatchingUp) Online.Client.QueueCommand(command);
+        }
+        else World.Enqueue(command);
     }
 
     /// <summary>Keeps one model per building: creates missing ones, removes those whose building was destroyed.</summary>
@@ -150,7 +218,7 @@ public sealed class DemoGame : MonoBehaviour
             foreach (Unit unit in World.Units)
                 if (!_views.ContainsKey(unit.Id))
                     _views[unit.Id] = UnitView.Create(unit, UnitModel(unit.Kind),
-                        unit.Team == SimCore.World.TeamEnemy ? _enemyPalette : paletteMaterial, ringMaterial, _arcMaterial);
+                        unit.Team != LocalTeam ? _enemyPalette : paletteMaterial, ringMaterial, _arcMaterial);
 
             _removeBuffer.Clear();
             foreach (int id in _views.Keys)
@@ -199,7 +267,7 @@ public sealed class DemoGame : MonoBehaviour
         go.name = "Building " + b.Kind;
         // The model is centred on its footprint.
         go.transform.position = new Vector3(b.X + b.Width / 2f, 0f, b.Y + b.Height / 2f);
-        Material mat = b.Team == SimCore.World.TeamEnemy ? _enemyPalette : paletteMaterial;
+        Material mat = b.Team != LocalTeam ? _enemyPalette : paletteMaterial;
         foreach (Renderer r in go.GetComponentsInChildren<Renderer>()) r.sharedMaterial = mat;
         return go;
     }
@@ -242,12 +310,37 @@ public sealed class DemoGame : MonoBehaviour
     {
         Touch.Update();
 
-        _accumulator += Mathf.Min(Time.unscaledDeltaTime, 0.1f) * SimSpeed;
+        if (Online != null)
+        {
+            NetMessage begin = Online.Pump();
+            if (begin is MatchStart start) BeginOnlineMatch(start.Team, w => Online.AttachWorld(w));
+            else if (begin is MatchResume resume) BeginOnlineMatch(resume.Team, w => Online.AttachResume(w, resume));
+        }
+
+        bool catchingUp = OnlineMatch && Online?.Client != null && Online.Client.CatchingUp;
+        if (catchingUp)
+        {
+            // Replaying the match after a reconnect: play as fast as the phone can for a few milliseconds a frame.
+            _stepTimer.Restart();
+            while (_stepTimer.Elapsed.TotalMilliseconds < 10.0 && Online.Client.CatchingUp && Online.Client.TryStep()) { }
+            _accumulator = 0f;
+        }
+
+        _accumulator += Mathf.Min(Time.unscaledDeltaTime, 0.1f) * (OnlineMatch ? 1f : SimSpeed);
         int steps = 0;
-        while (_accumulator >= TickSeconds && steps < 5)
+        while (!catchingUp && _accumulator >= TickSeconds && steps < 5)
         {
             _stepTimer.Restart();
-            World.Step();
+            if (OnlineMatch)
+            {
+                if (Online?.Client == null || !Online.Client.TryStep())
+                {
+                    // Waiting for the other player (or the match is over): do not save up time to rush through later.
+                    _accumulator = Mathf.Min(_accumulator, TickSeconds * 2f);
+                    break;
+                }
+            }
+            else World.Step();
             double ms = _stepTimer.Elapsed.TotalMilliseconds;
             _stepMsSum += ms;
             _stepCount++;
@@ -276,7 +369,7 @@ public sealed class DemoGame : MonoBehaviour
         _shotBuffer.Clear();
         World.DrainShots(_shotBuffer);
         foreach (ShotEvent shot in _shotBuffer)
-            Fx.Tracer(UnitView.ToUnity(shot.From), UnitView.ToUnity(shot.To), shot.Kind == UnitKind.RocketTrooper || shot.Kind == UnitKind.Tank, shot.Team == SimCore.World.TeamEnemy);
+            if (!catchingUp) Fx.Tracer(UnitView.ToUnity(shot.From), UnitView.ToUnity(shot.To), shot.Kind == UnitKind.RocketTrooper || shot.Kind == UnitKind.Tank, shot.Team != LocalTeam);
 
         float alpha = _accumulator / TickSeconds;
         foreach (UnitView view in _views.Values)
@@ -288,8 +381,8 @@ public sealed class DemoGame : MonoBehaviour
     private void UpdateOutcome()
     {
         if (Outcome != GameOutcome.Playing) return;
-        if (!World.HasBuilding(BuildingKind.Hq, SimCore.World.TeamPlayer)) Outcome = GameOutcome.Defeat;
-        else if (EnemyCount == 0) Outcome = GameOutcome.Victory;
+        if (!World.HasBuilding(BuildingKind.Hq, LocalTeam)) Outcome = GameOutcome.Defeat;
+        else if (OnlineMatch ? !World.HasBuilding(BuildingKind.Hq, OpponentTeam) : EnemyCount == 0) Outcome = GameOutcome.Victory;
     }
 
     // ---- player actions (called by TouchController and the HUD) ----
@@ -306,22 +399,22 @@ public sealed class DemoGame : MonoBehaviour
         {
             if (Cam.GroundPoint(screen, out Vector3 rally))
             {
-                World.Enqueue(new SetRallyCommand(_selectedBuilding.Id, ToVec2(rally)));
+                Issue(new SetRallyCommand(_selectedBuilding.Id, ToVec2(rally)));
                 TapMarker.Spawn(rally, markerMaterial);
             }
             SettingRally = false;
             return;
         }
 
-        int unitId = PickUnit(screen, SimCore.World.TeamPlayer);
+        int unitId = PickUnit(screen, LocalTeam);
 
         // Tapping an enemy with units selected = attack order.
         if (unitId == -1 && _selected.Count > 0)
         {
-            int enemyId = PickUnit(screen, SimCore.World.TeamEnemy);
+            int enemyId = PickUnit(screen, OpponentTeam);
             if (enemyId != -1) { OrderAttack(AttackKind.Unit, enemyId, World.GetUnit(enemyId).Pos); return; }
 
-            if (PickBuilding(screen) is Building target && target.Team == SimCore.World.TeamEnemy)
+            if (PickBuilding(screen) is Building target && target.Team == OpponentTeam)
             {
                 OrderAttack(AttackKind.Building, target.Id, new Vec2(Fix64.FromInt(target.X + target.Width / 2), Fix64.FromInt(target.Y + target.Height / 2)));
                 return;
@@ -331,7 +424,7 @@ public sealed class DemoGame : MonoBehaviour
         if (unitId == -1)
         {
             Building hit = PickBuilding(screen);
-            if (hit != null && hit.Team == SimCore.World.TeamPlayer)
+            if (hit != null && hit.Team == LocalTeam)
             {
                 _selected.Clear();
                 _selectedBuilding = hit;
@@ -371,7 +464,7 @@ public sealed class DemoGame : MonoBehaviour
         _selected.Clear();
         foreach (UnitView view in _views.Values)
         {
-            if (view.Team != SimCore.World.TeamPlayer) continue;
+            if (view.Team != LocalTeam) continue;
             Vector3 sp = Cam.Camera.WorldToScreenPoint(view.transform.position);
             if (sp.z > 0f && screenRect.Contains(sp)) _selected.Add(view.UnitId);
         }
@@ -382,7 +475,7 @@ public sealed class DemoGame : MonoBehaviour
         _selectedBuilding = null;
         _selected.Clear();
         foreach (UnitView view in _views.Values)
-            if (view.Team == SimCore.World.TeamPlayer) _selected.Add(view.UnitId);
+            if (view.Team == LocalTeam) _selected.Add(view.UnitId);
     }
 
     public void ClearSelection()
@@ -402,6 +495,7 @@ public sealed class DemoGame : MonoBehaviour
     /// </summary>
     public void SpawnBattleTest(int perSide)
     {
+        if (OnlineMatch) return; // would change this phone's world only: instant desync
         UnitKind[] kinds = { UnitKind.Rifleman, UnitKind.Rifleman, UnitKind.RocketTrooper, UnitKind.Jeep, UnitKind.Tank };
         const int columns = 12;
         for (int i = 0; i < perSide; i++)
@@ -420,14 +514,14 @@ public sealed class DemoGame : MonoBehaviour
 
     public void QueueUnit(UnitKind kind)
     {
-        if (_selectedBuilding != null) World.Enqueue(new QueueUnitCommand(_selectedBuilding.Id, kind));
+        if (_selectedBuilding != null) Issue(new QueueUnitCommand(_selectedBuilding.Id, kind));
     }
 
     /// <summary>Removes the last unit in the selected building's queue (it is refunded).</summary>
     public void CancelLastQueued()
     {
         if (_selectedBuilding != null && _selectedBuilding.Queue.Count > 0)
-            World.Enqueue(new CancelQueuedCommand(_selectedBuilding.Id, _selectedBuilding.Queue.Count - 1));
+            Issue(new CancelQueuedCommand(_selectedBuilding.Id, _selectedBuilding.Queue.Count - 1));
     }
 
     public void BeginSetRally() => SettingRally = _selectedBuilding != null;
@@ -492,14 +586,14 @@ public sealed class DemoGame : MonoBehaviour
 
         // Start in the middle of the screen.
         if (!Cam.GroundPoint(new Vector2(Screen.width / 2f, Screen.height / 2f), out Vector3 centre))
-            centre = new Vector3(StartCenter.x, 0f, StartCenter.y);
+            centre = new Vector3(_home.x, 0f, _home.y);
         MovePlacement(centre);
     }
 
     public void ConfirmPlacement()
     {
         if (!Placing || PlacingCheck != BuildCheck.Ok) return;
-        World.Enqueue(new BuildCommand(_placingKind, PlacingCell.x, PlacingCell.y));
+        Issue(new BuildCommand(_placingKind, PlacingCell.x, PlacingCell.y));
         EndPlacement();
     }
 
@@ -525,7 +619,7 @@ public sealed class DemoGame : MonoBehaviour
     private void UpdateGhost()
     {
         if (!Placing) return;
-        PlacingCheck = World.CheckBuild(_placingKind, PlacingCell.x, PlacingCell.y);
+        PlacingCheck = World.CheckBuild(_placingKind, PlacingCell.x, PlacingCell.y, LocalTeam);
         _ghost.SetCell(PlacingCell.x, PlacingCell.y, PlacingCheck == BuildCheck.Ok);
     }
 
@@ -538,7 +632,7 @@ public sealed class DemoGame : MonoBehaviour
 
         var ids = new int[_selected.Count];
         _selected.CopyTo(ids);
-        World.Enqueue(new MoveCommand(ids, target));
+        Issue(new MoveCommand(ids, target));
 
         TapMarker.Spawn(ground, markerMaterial);
     }
@@ -547,7 +641,7 @@ public sealed class DemoGame : MonoBehaviour
     {
         var ids = new int[_selected.Count];
         _selected.CopyTo(ids);
-        World.Enqueue(new AttackCommand(ids, kind, targetId));
+        Issue(new AttackCommand(ids, kind, targetId));
         TapMarker.Spawn(UnitView.ToUnity(targetPos), markerMaterial);
     }
 

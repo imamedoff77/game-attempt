@@ -22,7 +22,12 @@ public sealed class DebugPanel : MonoBehaviour
 
     private float _smoothedDelta = 1f / 60f;
     private float _worstFrame, _worstFrameWindow, _windowStart;
-    private GUIStyle _label, _button;
+    private GUIStyle _label, _button, _field;
+
+    // Online test: server address (remembered), room code to join with
+    private const string AddressPref = "serverAddress";
+    private string _address;
+    private string _joinCode = "";
 
     // Art style test: what do real shadows, detailed models and a darker mood cost on this phone?
     private Light _sun;
@@ -38,6 +43,13 @@ public sealed class DebugPanel : MonoBehaviour
     private void Awake()
     {
         _game = GetComponent<DemoGame>();
+        _address = PlayerPrefs.GetString(AddressPref, "");
+        if (_address.Length == 0)
+        {
+            // dev builds can ship with the address of the developer's computer (Resources/devserver.txt, not in git)
+            TextAsset preset = Resources.Load<TextAsset>("devserver");
+            if (preset != null) _address = preset.text.Trim();
+        }
         _sun = FindFirstObjectByType<Light>();
         if (_sun != null)
         {
@@ -124,6 +136,39 @@ public sealed class DebugPanel : MonoBehaviour
             Application.targetFrameRate = _uncapped ? 120 : 60;
         }
         if (GUI.Button(r[5], _dusk ? "Mood: DUSK (dark)" : "Mood: day", _button)) SetDusk(!_dusk);
+
+        DrawOnline();
+    }
+
+    private void DrawOnline()
+    {
+        Rect[] o = OnlineRects();
+        OnlineSession online = _game.Online;
+        string status = online == null ? "Online test: not connected" : "Online: " + online.Status;
+        if (online != null && _game.OnlineMatch && online.Client != null)
+            status += $"   tick {online.Client.TicksExecuted}   buffered turns {online.Client.TurnsBuffered}";
+        if (online != null && online.NetStats.Length > 0) status += "\n" + online.NetStats;
+        GUI.Label(o[0], status, _label);
+
+        bool busy = online != null && online.State != OnlineSession.Phase.Ended;
+        _address = GUI.TextField(o[1], _address, 40, _field);
+        _joinCode = GUI.TextField(o[3], _joinCode, MessageCodec.MaxCodeLength, _field).ToUpperInvariant();
+
+        GUI.enabled = !busy && _address.Trim().Length > 0;
+        if (GUI.Button(o[2], "Host", _button))
+        {
+            PlayerPrefs.SetString(AddressPref, _address.Trim());
+            _game.HostOnline(_address);
+        }
+        GUI.enabled = !busy && _address.Trim().Length > 0 && _joinCode.Length > 0;
+        if (GUI.Button(o[4], "Join", _button))
+        {
+            PlayerPrefs.SetString(AddressPref, _address.Trim());
+            _game.JoinOnline(_address, _joinCode);
+        }
+        GUI.enabled = online != null;
+        if (GUI.Button(o[5], "Leave", _button)) _game.LeaveOnline();
+        GUI.enabled = true;
     }
 
     private void SetShadows(int mode)
@@ -171,6 +216,7 @@ public sealed class DebugPanel : MonoBehaviour
         yield return Hotspot();
         if (!_visible) yield break;
         foreach (Rect r in ButtonRects()) yield return r;
+        foreach (Rect r in OnlineRects()) yield return r;
     }
 
     /// <summary>The resource counter in the top-left corner.</summary>
@@ -192,6 +238,25 @@ public sealed class DebugPanel : MonoBehaviour
         return rects;
     }
 
+    /// <summary>Status line, address field, Host, code field, Join, Leave (bottom-left, two rows).</summary>
+    private static Rect[] OnlineRects()
+    {
+        float pad = Screen.height * 0.02f;
+        float h = Screen.height * 0.085f;
+        float y1 = Screen.height * 0.68f;
+        float y2 = y1 + h + pad * 0.5f;
+        float x = pad;
+        float addrW = Screen.width * 0.3f, btnW = Screen.width * 0.12f, codeW = Screen.width * 0.14f;
+        var rects = new Rect[6];
+        rects[0] = new Rect(x, y1 - h * 0.45f, Screen.width * 0.9f, h * 1.4f);
+        rects[1] = new Rect(x, y2 + h * 0.1f, addrW, h);
+        rects[2] = new Rect(x + addrW + pad * 0.5f, y2 + h * 0.1f, btnW, h);
+        rects[3] = new Rect(rects[2].xMax + pad, y2 + h * 0.1f, codeW, h);
+        rects[4] = new Rect(rects[3].xMax + pad * 0.5f, y2 + h * 0.1f, btnW, h);
+        rects[5] = new Rect(rects[4].xMax + pad, y2 + h * 0.1f, btnW, h);
+        return rects;
+    }
+
     private void EnsureStyles()
     {
         if (_label != null) return;
@@ -199,6 +264,7 @@ public sealed class DebugPanel : MonoBehaviour
         _label = new GUIStyle(GUI.skin.label) { fontSize = size };
         _label.normal.textColor = Color.white;
         _button = new GUIStyle(GUI.skin.button) { fontSize = size, wordWrap = true };
+        _field = new GUIStyle(GUI.skin.textField) { fontSize = size };
     }
 }
 #endif

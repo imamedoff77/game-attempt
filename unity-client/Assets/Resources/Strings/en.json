@@ -47,5 +47,12 @@
   "button.clear": "Clear",
 
   "outcome.victory": "VICTORY! The enemy is destroyed",
-  "outcome.defeat": "DEFEAT: your base was destroyed"
+  "outcome.defeat": "DEFEAT: your base was destroyed",
+
+  "online.waitingNetwork": "Waiting for the other player...",
+  "online.opponentLeft": "The opponent left the match",
+  "online.connectionLost": "Connection lost",
+  "online.reconnecting": "Connection lost - reconnecting...",
+  "online.catchingUp": "Catching up with the match...",
+  "online.desync": "Out of sync - match stopped"
 }
