@@ -109,6 +109,15 @@ Başlanğıc kaynak: 500.
 
 ---
 
+## 6.5 Döyüş qaydası (istifadəçi təsdiqi, 2026-11-03)
+
+- Vahid **hərəkət edərkən də atəş aça bilər**. Hər vahidin öz **atəş qövsü** (görmə sektoru) var. Düşmən qövsün içindədirsə, ona atəş açılır. Qövs vahiddən vahidə dəyişir.
+- Müvəqqəti qövslər (data faylında dəyişdirilir): Əsgər 240°, Raketçi 140°, Cip 180°, Tank 90°.
+- Dayanmış vahid hədəfə tərəf dönür və atır. Seçilmiş vahidlərin altında qövs göstərilir.
+- Güc balansı (zərər/can) üzərində indi işlənmir, qalan xırda məsələlər (vahid limiti, tikinti vaxtı, tikinti radiusu) lazım deyil.
+
+---
+
 ## 7. Qərarlar
 
 | Sual | Qərar |
