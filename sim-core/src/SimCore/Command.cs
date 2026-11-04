@@ -6,6 +6,11 @@ namespace SimCore
     /// </summary>
     public abstract class Command
     {
+        /// <summary>
+        /// The team that gave the order (0 or 1). The server decides it, never the sender; the world only lets a team
+        /// command its own units and buildings and spend its own resources.
+        /// </summary>
+        public int Team { get; set; }
     }
 
     /// <summary>Order to move the given units to a point (they spread into a formation around it).</summary>

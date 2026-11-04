@@ -25,6 +25,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\Shared\MatchBot.cs" Link="MatchBot.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\..\unity-client\Assets\Editor\GameIdentity.cs" Link="GameIdentity.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\SimCore\SimCore.csproj" />
   </ItemGroup>
 

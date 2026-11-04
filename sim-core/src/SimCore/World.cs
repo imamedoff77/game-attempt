@@ -12,6 +12,8 @@ namespace SimCore
         public const int MaxQueue = 5;
         public const int TeamPlayer = 0;
         public const int TeamEnemy = 1;
+        /// <summary>Number of teams (1v1).</summary>
+        public const int TeamCount = 2;
         private const int TicksPerMinute = TicksPerSecond * 60;
 
         /// <summary>Distance between units when they spread out around a move target.</summary>
@@ -23,7 +25,7 @@ namespace SimCore
         private readonly List<Command> _pending = new List<Command>();
         private int _nextUnitId = 1;
         private int _nextBuildingId = 1;
-        private int _incomeProgress; // resource-ticks collected towards the next whole resource
+        private readonly PlayerState[] _players = new PlayerState[TeamCount];
         private readonly List<ShotEvent> _shots = new List<ShotEvent>();
 
         public MapGrid Map { get; }
@@ -33,23 +35,31 @@ namespace SimCore
         public IReadOnlyList<Unit> Units => _units;
         public IReadOnlyList<Building> Buildings => _buildings;
 
+        /// <summary>Economy of one team (resources, energy, income).</summary>
+        public PlayerState Player(int team) => _players[team];
+
+        // Shortcuts for the player's own team (team 0), used by the single-player demo UI and tests.
         /// <summary>Resources in stock. Income arrives automatically (no gatherers).</summary>
-        public int Resources { get; private set; } = Economy.StartResources;
+        public int Resources => _players[TeamPlayer].Resources;
         /// <summary>Energy the base can supply (the base itself plus power plants).</summary>
-        public int EnergyCapacity { get; private set; }
+        public int EnergyCapacity => _players[TeamPlayer].EnergyCapacity;
         /// <summary>Energy the buildings need to work.</summary>
-        public int EnergyUsed { get; private set; }
+        public int EnergyUsed => _players[TeamPlayer].EnergyUsed;
         /// <summary>True when the buildings need more energy than the base supplies; they stop working.</summary>
-        public bool EnergyShortage => EnergyUsed > EnergyCapacity;
+        public bool EnergyShortage => _players[TeamPlayer].EnergyShortage;
         /// <summary>Resources per minute at the moment.</summary>
-        public int IncomePerMinute { get; private set; }
+        public int IncomePerMinute => _players[TeamPlayer].IncomePerMinute;
 
         public World(MapGrid map)
         {
             Map = map;
             Width = Fix64.FromInt(map.Width);
             Height = Fix64.FromInt(map.Height);
-            UpdateEconomy();
+            for (int t = 0; t < TeamCount; t++)
+            {
+                _players[t] = new PlayerState();
+                UpdateEconomy(t);
+            }
         }
 
         /// <summary>All-sand map of the given size.</summary>
@@ -97,18 +107,18 @@ namespace SimCore
             BuildingDef def = Defs.Building(kind);
             if (!Map.CanPlace(x, y, def.Width, def.Height)) return null;
 
-            var building = new Building(_nextBuildingId++, kind, team, x, y, def.Width, def.Height, team == TeamPlayer ? NextOutput(kind) : 0);
+            var building = new Building(_nextBuildingId++, kind, team, x, y, def.Width, def.Height, NextOutput(kind, team));
             for (int cy = y; cy < y + def.Height; cy++)
                 for (int cx = x; cx < x + def.Width; cx++)
                     Map.SetBuilding(cx, cy, building.Id);
 
             _buildings.Add(building);
-            UpdateEconomy();
+            UpdateEconomy(team);
             return building;
         }
 
         /// <summary>Why a building can or cannot be built at a spot.</summary>
-        public BuildCheck CheckBuild(BuildingKind kind, int x, int y)
+        public BuildCheck CheckBuild(BuildingKind kind, int x, int y, int team = TeamPlayer)
         {
             if (kind == BuildingKind.Hq) return BuildCheck.NotAllowed;
             BuildingDef def = Defs.Building(kind);
@@ -118,41 +128,42 @@ namespace SimCore
                 int ux = u.Pos.X.ToInt(), uy = u.Pos.Y.ToInt();
                 if (ux >= x && ux < x + def.Width && uy >= y && uy < y + def.Height) return BuildCheck.UnitInWay;
             }
-            if (Resources < def.Cost) return BuildCheck.NotEnoughResources;
+            if (_players[team].Resources < def.Cost) return BuildCheck.NotEnoughResources;
             return BuildCheck.Ok;
         }
 
         /// <summary>What the next building of this kind would produce: energy (power plant) or resources per minute (supply center).</summary>
-        public int NextOutput(BuildingKind kind)
+        public int NextOutput(BuildingKind kind, int team = TeamPlayer)
         {
             if (kind != BuildingKind.PowerPlant && kind != BuildingKind.SupplyCenter) return 0;
             int existing = 0;
-            foreach (Building b in _buildings) if (b.Kind == kind && b.Team == TeamPlayer) existing++;
+            foreach (Building b in _buildings) if (b.Kind == kind && b.Team == team) existing++;
             return Economy.Pick(kind == BuildingKind.PowerPlant ? Economy.PowerPlantOutput : Economy.SupplyCenterIncome, existing);
         }
 
-        /// <summary>Recomputes energy balance, which buildings work, and the income.</summary>
-        private void UpdateEconomy()
+        /// <summary>Recomputes one team's energy balance, which of its buildings work, and its income.</summary>
+        private void UpdateEconomy(int team)
         {
+            PlayerState p = _players[team];
             int capacity = Economy.HqEnergy, used = 0;
             foreach (Building b in _buildings)
             {
-                if (b.Team != TeamPlayer) continue;
+                if (b.Team != team) continue;
                 if (b.Kind == BuildingKind.PowerPlant) capacity += b.Output;
                 used += Defs.Building(b.Kind).EnergyUse;
             }
-            EnergyCapacity = capacity;
-            EnergyUsed = used;
+            p.EnergyCapacity = capacity;
+            p.EnergyUsed = used;
 
             int income = Economy.HqIncomePerMinute;
             foreach (Building b in _buildings)
             {
-                if (b.Team != TeamPlayer) continue;
+                if (b.Team != team) continue;
                 // Demo rule: in a shortage every building that needs energy stops.
-                b.Powered = !EnergyShortage || Defs.Building(b.Kind).EnergyUse == 0;
+                b.Powered = !p.EnergyShortage || Defs.Building(b.Kind).EnergyUse == 0;
                 if (b.Kind == BuildingKind.SupplyCenter && b.Powered) income += b.Output;
             }
-            IncomePerMinute = income;
+            p.IncomePerMinute = income;
         }
 
         public Building GetBuilding(int id)
@@ -163,7 +174,15 @@ namespace SimCore
 
         public Unit GetUnit(int id) => _unitsById.TryGetValue(id, out Unit u) ? u : null;
 
+        /// <summary>Queues a command for the next tick. It acts for team 0 unless <see cref="Command.Team"/> was set.</summary>
         public void Enqueue(Command command) => _pending.Add(command);
+
+        /// <summary>Queues a command that acts for the given team (the network layer stamps the sender's team here).</summary>
+        public void Enqueue(Command command, int team)
+        {
+            command.Team = team;
+            _pending.Add(command);
+        }
 
         /// <summary>Advance the simulation by one tick.</summary>
         public void Step()
@@ -190,8 +209,11 @@ namespace SimCore
             StateHasher h = StateHasher.Create();
             h.Add(Tick);
             h.Add(Map.Hash());
-            h.Add(Resources);
-            h.Add(_incomeProgress);
+            foreach (PlayerState p in _players)
+            {
+                h.Add(p.Resources);
+                h.Add(p.IncomeProgress);
+            }
             h.Add(_nextUnitId);
             foreach (Building b in _buildings)
             {
@@ -276,11 +298,11 @@ namespace SimCore
                 if (u != null) units.Add(u);
             }
 
-            Fix64 cap = SlowestStep(units);
+            Fix64 cap = SlowestStep(units, cmd.Team);
             Vec2[] offsets = FormationOffsets(units.Count);
             for (int i = 0; i < units.Count; i++)
             {
-                if (units[i].Team != TeamPlayer) continue;
+                if (units[i].Team != cmd.Team) continue;
                 ClearTarget(units[i]); // a move order cancels an attack order
                 units[i].SpeedCap = cap;
                 GoTo(units[i], ClampToMap(cmd.Target + offsets[i]));
@@ -289,13 +311,13 @@ namespace SimCore
         }
 
         /// <summary>The slowest step among the player's units in the list: a group travels together at that pace.</summary>
-        private static Fix64 SlowestStep(List<Unit> units)
+        private static Fix64 SlowestStep(List<Unit> units, int team)
         {
             Fix64 slowest = default;
             bool any = false;
             foreach (Unit u in units)
             {
-                if (u.Team != TeamPlayer) continue;
+                if (u.Team != team) continue;
                 if (!any || u.StepPerTick < slowest) { slowest = u.StepPerTick; any = true; }
             }
             return slowest;
@@ -303,7 +325,7 @@ namespace SimCore
 
         private void ApplyAttack(AttackCommand cmd)
         {
-            if (!TargetPosition(cmd.TargetKind, cmd.TargetId, TeamEnemy, out _)) return;
+            if (!TargetPosition(cmd.TargetKind, cmd.TargetId, 1 - cmd.Team, out _)) return;
 
             var units = new List<Unit>(cmd.UnitIds.Length);
             foreach (int id in cmd.UnitIds)
@@ -311,11 +333,11 @@ namespace SimCore
                 Unit found = GetUnit(id);
                 if (found != null) units.Add(found);
             }
-            Fix64 cap = SlowestStep(units);
+            Fix64 cap = SlowestStep(units, cmd.Team);
 
             foreach (Unit u in units)
             {
-                if (u.Team != TeamPlayer) continue;
+                if (u.Team != cmd.Team) continue;
                 u.SpeedCap = cap;
                 u.Marching = false;
                 u.AttackKind = cmd.TargetKind;
@@ -326,10 +348,10 @@ namespace SimCore
 
         private void ApplyBuild(BuildCommand cmd)
         {
-            if (CheckBuild(cmd.Kind, cmd.X, cmd.Y) != BuildCheck.Ok) return;
+            if (!ValidTeam(cmd.Team) || CheckBuild(cmd.Kind, cmd.X, cmd.Y, cmd.Team) != BuildCheck.Ok) return;
 
-            Resources -= Defs.Building(cmd.Kind).Cost;
-            PlaceBuilding(cmd.Kind, cmd.X, cmd.Y);
+            _players[cmd.Team].Resources -= Defs.Building(cmd.Kind).Cost;
+            PlaceBuilding(cmd.Kind, cmd.X, cmd.Y, cmd.Team);
 
             // The new building may block routes that were planned before it existed.
             foreach (Unit u in _units)
@@ -341,23 +363,23 @@ namespace SimCore
         {
             if (b == null || Defs.Unit(kind).Producer != b.Kind) return QueueCheck.NotAllowed;
             if (b.QueueList.Count >= MaxQueue) return QueueCheck.QueueFull;
-            if (Resources < Defs.Unit(kind).Cost) return QueueCheck.NotEnoughResources;
+            if (_players[b.Team].Resources < Defs.Unit(kind).Cost) return QueueCheck.NotEnoughResources;
             return QueueCheck.Ok;
         }
 
         private void ApplyQueue(QueueUnitCommand cmd)
         {
             Building b = GetBuilding(cmd.BuildingId);
-            if (CheckQueue(b, cmd.Kind) != QueueCheck.Ok) return;
-            Resources -= Defs.Unit(cmd.Kind).Cost;
+            if (b == null || b.Team != cmd.Team || CheckQueue(b, cmd.Kind) != QueueCheck.Ok) return;
+            _players[b.Team].Resources -= Defs.Unit(cmd.Kind).Cost;
             b.QueueList.Add(cmd.Kind);
         }
 
         private void ApplyCancel(CancelQueuedCommand cmd)
         {
             Building b = GetBuilding(cmd.BuildingId);
-            if (b == null || cmd.Index < 0 || cmd.Index >= b.QueueList.Count) return;
-            Resources += Defs.Unit(b.QueueList[cmd.Index]).Cost;
+            if (b == null || b.Team != cmd.Team || cmd.Index < 0 || cmd.Index >= b.QueueList.Count) return;
+            _players[b.Team].Resources += Defs.Unit(b.QueueList[cmd.Index]).Cost;
             b.QueueList.RemoveAt(cmd.Index);
             if (cmd.Index == 0) b.Progress = 0;
         }
@@ -365,7 +387,7 @@ namespace SimCore
         private void ApplyRally(SetRallyCommand cmd)
         {
             Building b = GetBuilding(cmd.BuildingId);
-            if (b == null || Defs.Produces(b.Kind).Length == 0) return;
+            if (b == null || b.Team != cmd.Team || Defs.Produces(b.Kind).Length == 0) return;
             b.HasRally = true;
             b.Rally = ClampToMap(cmd.Point);
         }
@@ -375,7 +397,7 @@ namespace SimCore
         {
             foreach (Building b in _buildings)
             {
-                if (b.Team != TeamPlayer || b.QueueList.Count == 0 || !b.Powered) continue;
+                if (b.QueueList.Count == 0 || !b.Powered) continue;
 
                 UnitKind kind = b.QueueList[0];
                 if (b.Progress < Defs.Unit(kind).BuildSeconds * TicksPerSecond)
@@ -395,7 +417,7 @@ namespace SimCore
                 b.QueueList.RemoveAt(0);
                 b.Progress = 0;
 
-                Unit unit = SpawnUnit(kind, pos);
+                Unit unit = SpawnUnit(kind, pos, b.Team);
                 if (b.HasRally) GoTo(unit, b.Rally);
             }
         }
@@ -684,7 +706,8 @@ namespace SimCore
                 _buildings.RemoveAt(i);
                 buildingLost = true;
             }
-            if (buildingLost) UpdateEconomy();
+            if (buildingLost)
+                for (int t = 0; t < TeamCount; t++) UpdateEconomy(t);
 
             for (int i = _units.Count - 1; i >= 0; i--)
             {
@@ -697,13 +720,18 @@ namespace SimCore
         /// <summary>Adds the income for this tick. Whole resources only, so no fractions are needed.</summary>
         private void CollectIncome()
         {
-            _incomeProgress += IncomePerMinute;
-            while (_incomeProgress >= TicksPerMinute)
+            foreach (PlayerState p in _players)
             {
-                _incomeProgress -= TicksPerMinute;
-                Resources++;
+                p.IncomeProgress += p.IncomePerMinute;
+                while (p.IncomeProgress >= TicksPerMinute)
+                {
+                    p.IncomeProgress -= TicksPerMinute;
+                    p.Resources++;
+                }
             }
         }
+
+        private static bool ValidTeam(int team) => team >= 0 && team < TeamCount;
 
         /// <summary>Plans a route for the unit. Blocked destinations are moved to the nearest free cell; unreachable ones are ignored.</summary>
         private void GoTo(Unit u, Vec2 target)
