@@ -15,6 +15,11 @@ namespace SimCore
         /// <summary>Final destination of the current order.</summary>
         public Vec2 Target { get; internal set; }
         public bool Moving { get; internal set; }
+        /// <summary>True while following a move order from the player: shoots at what is in its firing arc, but never stops or chases.</summary>
+        public bool Marching { get; internal set; }
+
+        /// <summary>Unit vector the unit faces. Follows the way it moves; a standing unit turns towards its target.</summary>
+        public Vec2 Facing { get; internal set; }
 
         /// <summary>Waypoints to walk through, and which one is next.</summary>
         public Vec2[] Path { get; internal set; }
@@ -48,6 +53,8 @@ namespace SimCore
 
         internal Unit(int id, UnitKind kind, int team, Vec2 pos, Fix64 stepPerTick)
         {
+            // Player units start facing +y (towards the enemy), enemy units facing -y.
+            Facing = new Vec2(Fix64.Zero, team == 0 ? Fix64.One : -Fix64.One);
             Id = id;
             Kind = kind;
             Team = team;

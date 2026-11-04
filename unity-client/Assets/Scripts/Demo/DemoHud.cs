@@ -13,32 +13,25 @@ public sealed class DemoHud : MonoBehaviour
     private static readonly float[] Speeds = { 1f, 5f, 10f };
 
     private DemoGame _game;
-    private float _smoothedDelta = 1f / 60f;
-    private float _worstFrame, _worstFrameWindow, _windowStart;
     private GUIStyle _label;
     private GUIStyle _stats;
     private GUIStyle _button;
     private Texture2D _boltIcon;
     private bool _menuOpen;
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+    private DebugPanel _debug;
+#endif
 
     private void Awake()
     {
         _game = GetComponent<DemoGame>();
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        _debug = gameObject.AddComponent<DebugPanel>();
+#endif
     }
 
     private void Update()
     {
-        _smoothedDelta = Mathf.Lerp(_smoothedDelta, Time.unscaledDeltaTime, 0.05f);
-
-        // Worst frame time over the last 3 seconds (a spike shows up here even when the average FPS looks fine).
-        _worstFrameWindow = Mathf.Max(_worstFrameWindow, Time.unscaledDeltaTime);
-        if (Time.unscaledTime - _windowStart >= 3f)
-        {
-            _worstFrame = _worstFrameWindow;
-            _worstFrameWindow = 0f;
-            _windowStart = Time.unscaledTime;
-        }
-
         // Touch positions have their origin bottom-left, IMGUI rects top-left.
         if (_game.Touch != null)
             _game.Touch.IsOverUi = pos =>
@@ -64,7 +57,7 @@ public sealed class DemoHud : MonoBehaviour
         // Top-right: build menu button and simulation speed.
         Rect[] top = TopRects();
         GUI.enabled = !_game.Placing;
-        if (GUI.Button(top[0], _menuOpen ? "Tikinti (bağla)" : "Tikinti", _button)) _menuOpen = !_menuOpen;
+        if (GUI.Button(top[0], Strings.Get(_menuOpen ? "menu.buildClose" : "menu.build"), _button)) _menuOpen = !_menuOpen;
         GUI.enabled = true;
         for (int i = 0; i < Speeds.Length; i++)
         {
@@ -75,27 +68,23 @@ public sealed class DemoHud : MonoBehaviour
         if (_game.SelectedBuilding != null) _menuOpen = false;
         if (_menuOpen && !_game.Placing) DrawBuildMenu(world);
         if (_game.SelectedBuilding != null && !_game.Placing) DrawBuildingPanel(world, _game.SelectedBuilding);
-        if (_game.SettingRally) DrawHint("Toplanma nöqtəsi: xəritəyə toxunun");
-
-        // Performance test (left side)
-        if (GUI.Button(TestRect(), "Sınaq: +25 mənim +25 düşmən", _button)) _game.SpawnBattleTest(25);
+        if (_game.SettingRally) DrawHint(Strings.Get("hint.rally"));
 
         // Bottom-right row
         Rect[] r = BottomRects();
-        if (GUI.Button(r[0], _game.BuildOverlayVisible ? "Tikinti sahələri: AÇIQ" : "Tikinti sahələri", _button)) _game.ToggleBuildOverlay();
-        if (GUI.Button(r[1], _game.Touch.BoxMode ? "Çərçivə: AÇIQ" : "Çərçivə: BAĞLI", _button)) _game.Touch.BoxMode = !_game.Touch.BoxMode;
+        if (GUI.Button(r[0], Strings.Get(_game.Touch.BoxMode ? "button.boxOn" : "button.boxOff"), _button)) _game.Touch.BoxMode = !_game.Touch.BoxMode;
         if (_game.Placing)
         {
             GUI.enabled = _game.PlacingCheck == BuildCheck.Ok;
-            if (GUI.Button(r[2], "Təsdiq", _button)) _game.ConfirmPlacement();
+            if (GUI.Button(r[1], Strings.Get("button.confirm"), _button)) _game.ConfirmPlacement();
             GUI.enabled = true;
-            if (GUI.Button(r[3], "Ləğv et", _button)) _game.CancelPlacement();
+            if (GUI.Button(r[2], Strings.Get("button.cancel"), _button)) _game.CancelPlacement();
             DrawPlacementHint();
         }
         else
         {
-            if (GUI.Button(r[2], "Hamısı", _button)) _game.SelectAll();
-            if (GUI.Button(r[3], "Ləğv et", _button)) _game.ClearSelection();
+            if (GUI.Button(r[1], Strings.Get("button.selectAll"), _button)) _game.SelectAll();
+            if (GUI.Button(r[2], Strings.Get("button.clear"), _button)) _game.ClearSelection();
         }
 
         DrawOutcome();
@@ -118,8 +107,8 @@ public sealed class DemoHud : MonoBehaviour
         float pad = Screen.height * 0.02f;
         float line = Screen.height * 0.055f;
 
-        string resources = $"Resurs {world.Resources}  (+{world.IncomePerMinute}/dəq)";
-        string energy = $"Enerji {world.EnergyUsed}/{world.EnergyCapacity}";
+        string resources = Strings.Get("hud.resources", world.Resources, world.IncomePerMinute);
+        string energy = Strings.Get("hud.energy", world.EnergyUsed, world.EnergyCapacity);
         GUI.Label(new Rect(pad, pad, Screen.width * 0.5f, line), resources, _stats);
 
         GUIStyle energyStyle = _stats;
@@ -127,14 +116,9 @@ public sealed class DemoHud : MonoBehaviour
         {
             energyStyle = new GUIStyle(_stats);
             energyStyle.normal.textColor = new Color(1f, 0.4f, 0.35f);
-            energy += "  - ÇATMIR!";
+            energy += Strings.Get("hud.energyShortage");
         }
         GUI.Label(new Rect(pad, pad + line, Screen.width * 0.5f, line), energy, energyStyle);
-
-        string info = $"FPS {1f / _smoothedDelta:0}   Units {world.Units.Count}   Selected {_game.SelectedCount}   Düşmən {_game.EnemyCount}   {_game.SelfTestStatus}";
-        GUI.Label(new Rect(pad, pad + line * 2f, Screen.width * 0.6f, line), info, _label);
-        string perf = $"Kadr max {_worstFrame * 1000f:0} ms   Sim {_game.SimMsAverage:0.0} ms (max {_game.SimMsWorst:0.0})";
-        GUI.Label(new Rect(pad, pad + line * 2.7f, Screen.width * 0.6f, line), perf, _label);
     }
 
     private void DrawBuildMenu(World world)
@@ -145,7 +129,7 @@ public sealed class DemoHud : MonoBehaviour
             BuildingKind kind = Buildable[i];
             BuildingDef def = Defs.Building(kind);
             GUI.enabled = world.Resources >= def.Cost;
-            if (GUI.Button(items[i], $"{def.Name}  -  {def.Cost}\n{Describe(world, kind, def)}", _button))
+            if (GUI.Button(items[i], $"{Strings.BuildingName(kind)}  -  {def.Cost}\n{Describe(world, kind, def)}", _button))
             {
                 _menuOpen = false;
                 _game.BeginPlacement(kind);
@@ -158,28 +142,27 @@ public sealed class DemoHud : MonoBehaviour
     {
         switch (kind)
         {
-            case BuildingKind.PowerPlant: return $"+{world.NextOutput(kind)} enerji";
-            case BuildingKind.SupplyCenter: return $"-{def.EnergyUse} enerji,  +{world.NextOutput(kind)} resurs/dəq";
-            default: return $"-{def.EnergyUse} enerji";
+            case BuildingKind.PowerPlant: return Strings.Get("menu.energyPlus", world.NextOutput(kind));
+            case BuildingKind.SupplyCenter: return Strings.Get("menu.energyMinusIncome", def.EnergyUse, world.NextOutput(kind));
+            default: return Strings.Get("menu.energyMinus", def.EnergyUse);
         }
     }
 
     private void DrawBuildingPanel(World world, Building b)
     {
-        BuildingDef def = Defs.Building(b.Kind);
         UnitKind[] units = Defs.Produces(b.Kind);
         Rect[] rects = PanelRects(units.Length);
 
-        string state = b.Powered ? "işləyir" : "ENERJİ ÇATMIR - işləmir";
-        string text = $"{def.Name}  ({state})";
+        string state = Strings.Get(b.Powered ? "panel.working" : "panel.noEnergy");
+        string text = Strings.Get("panel.title", Strings.BuildingName(b.Kind), state);
         if (units.Length > 0)
         {
-            text += "\nNövbə: ";
-            if (b.Queue.Count == 0) text += "boş";
+            text += Strings.Get("panel.queue");
+            if (b.Queue.Count == 0) text += Strings.Get("panel.queueEmpty");
             for (int i = 0; i < b.Queue.Count; i++)
             {
                 if (i > 0) text += ", ";
-                text += Defs.Unit(b.Queue[i]).Name;
+                text += Strings.UnitName(b.Queue[i]);
                 if (i == 0) text += $" {Percent(b)}%";
             }
         }
@@ -191,17 +174,17 @@ public sealed class DemoHud : MonoBehaviour
             UnitDef ud = Defs.Unit(units[i]);
             QueueCheck check = world.CheckQueue(b, units[i]);
             GUI.enabled = check == QueueCheck.Ok;
-            string extra = check == QueueCheck.QueueFull ? "  (növbə dolu)" : "";
-            if (GUI.Button(rects[1 + i], $"{ud.Name}  -  {ud.Cost}  ({ud.BuildSeconds} san){extra}", _button))
+            string extra = check == QueueCheck.QueueFull ? Strings.Get("panel.queueFull") : "";
+            if (GUI.Button(rects[1 + i], Strings.Get("panel.unitButton", Strings.UnitName(units[i]), ud.Cost, ud.BuildSeconds, extra), _button))
                 _game.QueueUnit(units[i]);
         }
 
         if (units.Length > 0)
         {
             GUI.enabled = b.Queue.Count > 0;
-            if (GUI.Button(rects[1 + units.Length], "Sonuncunu ləğv et", _button)) _game.CancelLastQueued();
+            if (GUI.Button(rects[1 + units.Length], Strings.Get("panel.cancelLast"), _button)) _game.CancelLastQueued();
             GUI.enabled = true;
-            if (GUI.Button(rects[2 + units.Length], b.HasRally ? "Toplanma nöqtəsini dəyiş" : "Toplanma nöqtəsi", _button)) _game.BeginSetRally();
+            if (GUI.Button(rects[2 + units.Length], Strings.Get(b.HasRally ? "panel.rallyChange" : "panel.rally"), _button)) _game.BeginSetRally();
         }
         GUI.enabled = true;
     }
@@ -278,7 +261,7 @@ public sealed class DemoHud : MonoBehaviour
         };
         style.normal.textColor = won ? new Color(0.5f, 1f, 0.55f) : new Color(1f, 0.45f, 0.4f);
         var rect = new Rect(0f, Screen.height * 0.3f, Screen.width, Screen.height * 0.2f);
-        GUI.Label(rect, won ? "QƏLƏBƏ! Düşmən məhv edildi" : "MƏĞLUBİYYƏT: baza məhv oldu", style);
+        GUI.Label(rect, Strings.Get(won ? "outcome.victory" : "outcome.defeat"), style);
     }
 
     private void DrawHint(string text)
@@ -292,21 +275,20 @@ public sealed class DemoHud : MonoBehaviour
 
     private void DrawPlacementHint()
     {
-        BuildingDef def = Defs.Building(_game.PlacingKind);
         string reason;
         switch (_game.PlacingCheck)
         {
-            case BuildCheck.Ok: reason = "Təsdiq düyməsinə basın"; break;
-            case BuildCheck.BadGround: reason = "Burada tikmək olmaz (qırmızı sahə)"; break;
-            case BuildCheck.UnitInWay: reason = "Vahid yoldadır, onu kənara çəkin"; break;
-            case BuildCheck.NotEnoughResources: reason = "Resurs çatmır"; break;
-            default: reason = "Tikmək olmaz"; break;
+            case BuildCheck.Ok: reason = Strings.Get("hint.placeOk"); break;
+            case BuildCheck.BadGround: reason = Strings.Get("hint.placeBadGround"); break;
+            case BuildCheck.UnitInWay: reason = Strings.Get("hint.placeUnitInWay"); break;
+            case BuildCheck.NotEnoughResources: reason = Strings.Get("hint.placeNoResources"); break;
+            default: reason = Strings.Get("hint.placeNo"); break;
         }
         float pad = Screen.height * 0.02f;
         float y = Screen.height - Screen.height * 0.11f - Screen.height * 0.015f - Screen.height * 0.12f;
         GUI.Box(new Rect(Screen.width - Screen.width * 0.5f - pad, y, Screen.width * 0.5f, Screen.height * 0.1f), "");
         GUI.Label(new Rect(Screen.width - Screen.width * 0.5f - pad, y, Screen.width * 0.5f, Screen.height * 0.1f),
-            $"{def.Name}: yeri seçin (xəritəyə toxunun)\n{reason}", _label);
+            Strings.Get("hint.place", Strings.BuildingName(_game.PlacingKind), reason), _label);
     }
 
     /// <summary>A lightning icon over every building that is switched off for lack of energy.</summary>
@@ -330,7 +312,10 @@ public sealed class DemoHud : MonoBehaviour
     {
         foreach (Rect r in TopRects()) yield return r;
         foreach (Rect r in BottomRects()) yield return r;
-        yield return TestRect();
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        if (_debug != null)
+            foreach (Rect r in _debug.ActiveRects()) yield return r;
+#endif
         if (_menuOpen && !_game.Placing)
             foreach (Rect r in MenuRects()) yield return r;
         if (_game.SelectedBuilding != null && !_game.Placing)
@@ -355,15 +340,9 @@ public sealed class DemoHud : MonoBehaviour
         return rects;
     }
 
-    private static Rect TestRect()
-    {
-        float pad = Screen.height * 0.02f;
-        return new Rect(pad, Screen.height * 0.30f, Screen.width * 0.2f, Screen.height * 0.12f);
-    }
-
     private static Rect[] BottomRects()
     {
-        const int count = 4;
+        const int count = 3;
         float h = Screen.height * 0.11f;
         float w = Mathf.Min(Screen.width * 0.19f, h * 3.6f);
         float gap = Screen.height * 0.015f;
@@ -375,7 +354,7 @@ public sealed class DemoHud : MonoBehaviour
         return rects;
     }
 
-    /// <summary>Top-right: Tikinti, x1, x5, x10.</summary>
+    /// <summary>Top-right: Build, x1, x5, x10.</summary>
     private static Rect[] TopRects()
     {
         float h = Screen.height * 0.09f;

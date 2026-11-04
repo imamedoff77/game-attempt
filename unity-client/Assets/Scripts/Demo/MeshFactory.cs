@@ -27,6 +27,30 @@ public static class MeshFactory
         return mesh;
     }
 
+    /// <summary>Flat pie slice at y = 0 pointing along +z: the given radius and total angle (degrees), centred on +z.</summary>
+    public static Mesh Wedge(float radius, float arcDegrees, int segments = 24)
+    {
+        var verts = new Vector3[segments + 2];
+        var tris = new int[segments * 3];
+        verts[0] = Vector3.zero;
+        float half = Mathf.Deg2Rad * arcDegrees * 0.5f;
+        for (int i = 0; i <= segments; i++)
+        {
+            float a = Mathf.Lerp(-half, half, i / (float)segments);
+            verts[i + 1] = new Vector3(Mathf.Sin(a) * radius, 0f, Mathf.Cos(a) * radius);
+        }
+        for (int i = 0; i < segments; i++)
+        {
+            tris[i * 3] = 0;
+            tris[i * 3 + 1] = i + 2;
+            tris[i * 3 + 2] = i + 1;
+        }
+        var mesh = new Mesh { name = "Wedge", vertices = verts, triangles = tris };
+        mesh.RecalculateNormals();
+        mesh.RecalculateBounds();
+        return mesh;
+    }
+
     /// <summary>Flat ring around the origin at y = 0 (use innerRadius near 0 for a disc).</summary>
     public static Mesh Ring(float innerRadius, float outerRadius, int segments = 28)
     {

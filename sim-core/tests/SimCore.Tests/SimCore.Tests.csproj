@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -16,6 +16,12 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The balance data the game ships with; tests run against the very same file. -->
+    <None Include="..\..\src\SimCore\Resources\gamedata.json" Link="gamedata.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\..\unity-client\Assets\Resources\Strings\en.json" Link="en.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,0 +1,51 @@
+{
+  "unit.Rifleman": "Rifleman",
+  "unit.RocketTrooper": "Rocket trooper",
+  "unit.Jeep": "Jeep",
+  "unit.Tank": "Tank",
+
+  "building.Hq": "Headquarters",
+  "building.PowerPlant": "Power plant",
+  "building.SupplyCenter": "Supply center",
+  "building.Barracks": "Barracks",
+  "building.VehicleFactory": "Vehicle factory",
+
+  "hud.resources": "Resources {0}  (+{1}/min)",
+  "hud.energy": "Energy {0}/{1}",
+  "hud.energyShortage": "  - SHORTAGE!",
+
+  "menu.build": "Build",
+  "menu.buildClose": "Build (close)",
+  "menu.energyPlus": "+{0} energy",
+  "menu.energyMinus": "-{0} energy",
+  "menu.energyMinusIncome": "-{0} energy,  +{1} resources/min",
+
+  "panel.title": "{0}  ({1})",
+  "panel.working": "working",
+  "panel.noEnergy": "NO ENERGY - not working",
+  "panel.queue": "\nQueue: ",
+  "panel.queueEmpty": "empty",
+  "panel.unitButton": "{0}  -  {1}  ({2} s){3}",
+  "panel.queueFull": "  (queue full)",
+  "panel.cancelLast": "Cancel last",
+  "panel.rally": "Rally point",
+  "panel.rallyChange": "Change rally point",
+
+  "hint.rally": "Rally point: tap the map",
+  "hint.place": "{0}: choose a spot (tap the map)\n{1}",
+  "hint.placeOk": "Press Confirm",
+  "hint.placeBadGround": "Cannot build here (red area)",
+  "hint.placeUnitInWay": "A unit is in the way, move it aside",
+  "hint.placeNoResources": "Not enough resources",
+  "hint.placeNo": "Cannot build",
+
+  "button.boxOn": "Box select: ON",
+  "button.boxOff": "Box select: OFF",
+  "button.confirm": "Confirm",
+  "button.cancel": "Cancel",
+  "button.selectAll": "Select all",
+  "button.clear": "Clear",
+
+  "outcome.victory": "VICTORY! The enemy is destroyed",
+  "outcome.defeat": "DEFEAT: your base was destroyed"
+}

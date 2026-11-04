@@ -20,14 +20,37 @@ public class CombatTests
     }
 
     [Fact]
-    public void MovingUnits_DoNotShoot_UntilOrderedToAttack()
+    public void MarchingUnit_ShootsEnemyInsideItsArc_AndKeepsWalking()
     {
         World w = NewWorld();
         Unit rifle = w.SpawnUnit(UnitKind.Rifleman, P(10, 10));
-        Unit enemy = w.SpawnUnit(UnitKind.Tank, P(13, 10), World.TeamEnemy);
+        Unit enemy = w.SpawnUnit(UnitKind.Tank, P(12, 14), World.TeamEnemy); // ahead and to the right, in range
         w.Enqueue(new MoveCommand(new[] { rifle.Id }, P(10, 40)));
-        w.Step();
-        Assert.Equal(AttackKind.None, rifle.AttackKind);
+        Run(w, 3);
+        Assert.True(enemy.Hp < enemy.MaxHp, "the rifleman should have hit the tank while walking");
+        Assert.True(rifle.Pos.Y.ToInt() > 12, "and it keeps walking instead of stopping to fight");
+    }
+
+    [Fact]
+    public void MarchingUnit_DoesNotShootOutsideItsArc()
+    {
+        World w = NewWorld();
+        Unit tank = w.SpawnUnit(UnitKind.Tank, P(10, 10));      // 90 degree arc, walking north
+        Unit enemy = w.SpawnUnit(UnitKind.Rifleman, P(13, 10), World.TeamEnemy); // straight to its side
+        w.Enqueue(new MoveCommand(new[] { tank.Id }, P(10, 40)));
+        Run(w, 4);
+        Assert.Equal(enemy.MaxHp, enemy.Hp);
+    }
+
+    [Fact]
+    public void StandingUnit_TurnsToItsTarget_ThenShoots()
+    {
+        World w = NewWorld();
+        Unit tank = w.SpawnUnit(UnitKind.Tank, P(10, 10));                       // faces +y at the start
+        Unit enemy = w.SpawnUnit(UnitKind.Rifleman, P(13, 10), World.TeamEnemy); // to its side
+        Run(w, 3);
+        Assert.True(enemy.Hp < enemy.MaxHp || w.GetUnit(enemy.Id) == null);
+        Assert.True(tank.Facing.X.Raw > 0, "it turned east");
     }
 
     [Fact]

@@ -21,10 +21,15 @@ namespace SimCore
         public int CooldownTicks { get; }
         /// <summary>How far it notices enemies, in map units.</summary>
         public Fix64 Sight { get; }
+        /// <summary>Width of the firing arc in degrees (360 = all around). While moving, a unit can only shoot inside this arc, centred on the way it faces.</summary>
+        public int ArcDegrees { get; }
+        /// <summary>cos(ArcDegrees / 2), precomputed so the simulation needs no trigonometry.</summary>
+        public Fix64 CosHalfArc { get; }
 
-        public CombatDef(int hp, int damage, int range, int cooldownTicks, int sight)
+        public CombatDef(int hp, int damage, int range, int cooldownTicks, int sight, int arcDegrees, int cosHalfArcThousandths)
         {
             Hp = hp; Damage = damage; Range = Fix64.FromInt(range); CooldownTicks = cooldownTicks; Sight = Fix64.FromInt(sight);
+            ArcDegrees = arcDegrees; CosHalfArc = Fix64.FromFraction(cosHalfArcThousandths, 1000);
         }
     }
 
@@ -36,7 +41,6 @@ namespace SimCore
     {
         public UnitKind Kind { get; }
         public UnitClass Class { get; }
-        public string Name { get; }
         /// <summary>Map units per second.</summary>
         public Fix64 Speed { get; }
         /// <summary>Resource price, paid when it is queued.</summary>
@@ -45,16 +49,15 @@ namespace SimCore
         public int BuildSeconds { get; }
         public BuildingKind Producer { get; }
 
-        public UnitDef(UnitKind kind, UnitClass unitClass, string name, Fix64 speed, int cost, int buildSeconds, BuildingKind producer)
+        public UnitDef(UnitKind kind, UnitClass unitClass, Fix64 speed, int cost, int buildSeconds, BuildingKind producer)
         {
-            Kind = kind; Class = unitClass; Name = name; Speed = speed; Cost = cost; BuildSeconds = buildSeconds; Producer = producer;
+            Kind = kind; Class = unitClass; Speed = speed; Cost = cost; BuildSeconds = buildSeconds; Producer = producer;
         }
     }
 
     public readonly struct BuildingDef
     {
         public BuildingKind Kind { get; }
-        public string Name { get; }
         /// <summary>Footprint in cells.</summary>
         public int Width { get; }
         public int Height { get; }
@@ -63,94 +66,62 @@ namespace SimCore
         /// <summary>Energy this building needs in order to work (0 = needs none).</summary>
         public int EnergyUse { get; }
 
-        public BuildingDef(BuildingKind kind, string name, int width, int height, int cost, int energyUse)
+        public BuildingDef(BuildingKind kind, int width, int height, int cost, int energyUse)
         {
-            Kind = kind; Name = name; Width = width; Height = height; Cost = cost; EnergyUse = energyUse;
+            Kind = kind; Width = width; Height = height; Cost = cost; EnergyUse = energyUse;
         }
     }
 
-    /// <summary>Placeholder balance numbers. Later these move to a data file.</summary>
+    /// <summary>
+    /// Balance numbers, served from the loaded <see cref="GameData"/> (gamedata.json).
+    /// The host must call <see cref="Load"/> once at start-up, before any World is created.
+    /// Display names are not here: the simulation does not care about them (see the client's string table).
+    /// </summary>
     public static class Defs
     {
-        public static UnitDef Unit(UnitKind kind)
+        private static GameData _data;
+
+        public static bool IsLoaded => _data != null;
+
+        /// <summary>Fingerprint of the loaded balance data; both players of a match must have the same value.</summary>
+        public static ulong DataHash => Data.Hash;
+
+        /// <summary>Reads gamedata.json text. Throws <see cref="GameDataException"/> if it is invalid (the previous data stays in use).</summary>
+        public static void Load(string json) => _data = GameData.Parse(json);
+
+        internal static GameData Data
         {
-            switch (kind)
+            get
             {
-                case UnitKind.Rifleman: return new UnitDef(kind, UnitClass.Infantry, "Əsgər", Fix64.FromInt(3), 50, 4, BuildingKind.Barracks);
-                case UnitKind.RocketTrooper: return new UnitDef(kind, UnitClass.Infantry, "Raketçi", Fix64.FromFraction(5, 2), 80, 6, BuildingKind.Barracks);
-                case UnitKind.Jeep: return new UnitDef(kind, UnitClass.Vehicle, "Cip", Fix64.FromInt(6), 150, 8, BuildingKind.VehicleFactory);
-                case UnitKind.Tank: return new UnitDef(kind, UnitClass.Vehicle, "Tank", Fix64.FromInt(2), 300, 15, BuildingKind.VehicleFactory);
-                default: throw new ArgumentOutOfRangeException(nameof(kind));
+                if (_data == null) throw new InvalidOperationException("Balance data is not loaded: call Defs.Load(gamedata.json text) before using the simulation.");
+                return _data;
             }
         }
 
-        /// <summary>Placeholder fighting numbers.</summary>
-        public static CombatDef Combat(UnitKind kind)
-        {
-            switch (kind)
-            {
-                case UnitKind.Rifleman: return new CombatDef(60, 6, 5, 10, 9);
-                case UnitKind.RocketTrooper: return new CombatDef(50, 25, 7, 30, 9);
-                case UnitKind.Jeep: return new CombatDef(100, 8, 6, 8, 10);
-                case UnitKind.Tank: return new CombatDef(400, 40, 8, 30, 11);
-                default: throw new ArgumentOutOfRangeException(nameof(kind));
-            }
-        }
+        public static UnitDef Unit(UnitKind kind) => Data.Units[(int)kind];
 
-        public static int BuildingHp(BuildingKind kind)
-        {
-            switch (kind)
-            {
-                case BuildingKind.Hq: return 1500;
-                case BuildingKind.PowerPlant: return 400;
-                case BuildingKind.SupplyCenter: return 600;
-                case BuildingKind.Barracks: return 700;
-                case BuildingKind.VehicleFactory: return 900;
-                default: throw new ArgumentOutOfRangeException(nameof(kind));
-            }
-        }
+        public static CombatDef Combat(UnitKind kind) => Data.Combat[(int)kind];
 
-        private static readonly UnitKind[] BarracksUnits = { UnitKind.Rifleman, UnitKind.RocketTrooper };
-        private static readonly UnitKind[] FactoryUnits = { UnitKind.Jeep, UnitKind.Tank };
-        private static readonly UnitKind[] NoUnits = new UnitKind[0];
+        public static int BuildingHp(BuildingKind kind) => Data.BuildingHp[(int)kind];
 
-        /// <summary>The units a building can produce (empty for buildings that produce nothing).</summary>
-        public static UnitKind[] Produces(BuildingKind kind)
-        {
-            switch (kind)
-            {
-                case BuildingKind.Barracks: return BarracksUnits;
-                case BuildingKind.VehicleFactory: return FactoryUnits;
-                default: return NoUnits;
-            }
-        }
+        /// <summary>The units a building can produce (empty for buildings that produce nothing). Do not modify the result.</summary>
+        public static UnitKind[] Produces(BuildingKind kind) => Data.Produces[(int)kind];
 
-        public static BuildingDef Building(BuildingKind kind)
-        {
-            switch (kind)
-            {
-                case BuildingKind.Hq: return new BuildingDef(kind, "Baza", 4, 4, 0, 0);
-                case BuildingKind.PowerPlant: return new BuildingDef(kind, "Elektrik stansiyası", 2, 2, 100, 0);
-                case BuildingKind.SupplyCenter: return new BuildingDef(kind, "Təchizat mərkəzi", 3, 3, 150, 20);
-                case BuildingKind.Barracks: return new BuildingDef(kind, "Kazarma", 3, 2, 200, 30);
-                case BuildingKind.VehicleFactory: return new BuildingDef(kind, "Texnika zavodu", 4, 3, 300, 50);
-                default: throw new ArgumentOutOfRangeException(nameof(kind));
-            }
-        }
+        public static BuildingDef Building(BuildingKind kind) => Data.Buildings[(int)kind];
     }
 
-    /// <summary>Placeholder economy numbers. Later these move to a data file.</summary>
+    /// <summary>Economy numbers, served from the loaded <see cref="GameData"/>.</summary>
     public static class Economy
     {
-        public const int StartResources = 500;
-        public const int HqEnergy = 20;
-        public const int HqIncomePerMinute = 20;
+        public static int StartResources => Defs.Data.StartResources;
+        public static int HqEnergy => Defs.Data.HqEnergy;
+        public static int HqIncomePerMinute => Defs.Data.HqIncomePerMinute;
 
         /// <summary>Energy given by the 1st, 2nd, 3rd... power plant. Later ones repeat the last value.</summary>
-        public static readonly int[] PowerPlantOutput = { 120, 80, 60, 50, 40 };
+        public static int[] PowerPlantOutput => Defs.Data.PowerPlantOutput;
 
         /// <summary>Resources per minute given by the 1st, 2nd, 3rd... supply center. Later ones repeat the last value.</summary>
-        public static readonly int[] SupplyCenterIncome = { 60, 40, 30, 25, 20 };
+        public static int[] SupplyCenterIncome => Defs.Data.SupplyCenterIncome;
 
         public static int Pick(int[] table, int index) => table[index < table.Length ? index : table.Length - 1];
     }

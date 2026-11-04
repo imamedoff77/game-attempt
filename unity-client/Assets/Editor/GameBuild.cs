@@ -14,12 +14,14 @@ using UnityEngine.Rendering.Universal;
 /// settings) is created from code, so it can be rebuilt from scratch without opening the editor.
 ///
 ///   Unity -batchmode -nographics -quit -projectPath unity-client -executeMethod GameBuild.Prepare
-///   Unity -batchmode -nographics -quit -projectPath unity-client -buildTarget Android -executeMethod GameBuild.BuildAndroid
+///   Unity -batchmode -nographics -quit -projectPath unity-client -buildTarget Android -executeMethod GameBuild.BuildAndroid      (release: no debug tools)
+///   Unity -batchmode -nographics -quit -projectPath unity-client -buildTarget Android -executeMethod GameBuild.BuildAndroidDev   (test build: with the debug panel)
 /// </summary>
 public static class GameBuild
 {
     private const string ScenePath = "Assets/Scenes/Bootstrap.unity";
     private const string ApkPath = "Builds/Android/GameAttempt.apk";
+    private const string DevApkPath = "Builds/Android/GameAttempt-dev.apk";
 
     public static void Prepare()
     {
@@ -40,25 +42,31 @@ public static class GameBuild
         }
     }
 
-    public static void BuildAndroid()
+    public static void BuildAndroid() => Build(development: false);
+
+    public static void BuildAndroidDev() => Build(development: true);
+
+    private static void Build(bool development)
     {
+        string apkPath = development ? DevApkPath : ApkPath;
         try
         {
             SetupRenderPipeline();
             ConfigureAndroid();
             CreateScene();
 
-            Directory.CreateDirectory(Path.GetDirectoryName(ApkPath));
+            Directory.CreateDirectory(Path.GetDirectoryName(apkPath));
             var options = new BuildPlayerOptions
             {
                 scenes = new[] { ScenePath },
-                locationPathName = ApkPath,
+                locationPathName = apkPath,
                 target = BuildTarget.Android,
-                options = BuildOptions.None,
+                // Development defines DEVELOPMENT_BUILD, which switches the debug panel on (see DebugPanel.cs).
+                options = development ? BuildOptions.Development : BuildOptions.None,
             };
 
             BuildSummary summary = BuildPipeline.BuildPlayer(options).summary;
-            Debug.Log($"BUILD_RESULT: {summary.result} size={summary.totalSize} errors={summary.totalErrors} time={summary.totalTime}");
+            Debug.Log($"BUILD_RESULT: {(development ? "dev" : "release")} {summary.result} size={summary.totalSize} errors={summary.totalErrors} time={summary.totalTime}");
             EditorApplication.Exit(summary.result == BuildResult.Succeeded ? 0 : 1);
         }
         catch (Exception e)
@@ -88,6 +96,44 @@ public static class GameBuild
         PlayerSettings.allowedAutorotateToLandscapeRight = true;
 
         EditorUserBuildSettings.buildAppBundle = false;
+        PlayerSettings.enableFrameTimingStats = true; // GPU/CPU frame times for the performance log (small cost)
+        ConfigureSigning();
+    }
+
+    /// <summary>
+    /// Signs with the release key kept OUTSIDE the repository: ~/.config/game-keys/release.properties
+    /// (lines keystore=, alias=, password=; override the file with the GAME_KEYS_FILE environment variable).
+    /// Without that file the build falls back to Unity's debug key, so a fresh checkout still builds.
+    /// An app installed with one key cannot be updated by an APK signed with another: uninstall first when switching.
+    /// </summary>
+    private static void ConfigureSigning()
+    {
+        string file = Environment.GetEnvironmentVariable("GAME_KEYS_FILE");
+        if (string.IsNullOrEmpty(file))
+            file = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config", "game-keys", "release.properties");
+
+        if (!File.Exists(file))
+        {
+            PlayerSettings.Android.useCustomKeystore = false;
+            Debug.LogWarning("SIGNING: " + file + " not found, using the debug key");
+            return;
+        }
+
+        var values = new System.Collections.Generic.Dictionary<string, string>();
+        foreach (string line in File.ReadAllLines(file))
+        {
+            int eq = line.IndexOf('=');
+            if (eq > 0) values[line.Substring(0, eq).Trim()] = line.Substring(eq + 1).Trim();
+        }
+        if (!values.TryGetValue("keystore", out string keystore) || !values.TryGetValue("alias", out string alias) || !values.TryGetValue("password", out string password))
+            throw new Exception("SIGNING: " + file + " must contain keystore=, alias= and password=");
+
+        PlayerSettings.Android.useCustomKeystore = true;
+        PlayerSettings.Android.keystoreName = keystore;
+        PlayerSettings.Android.keystorePass = password;
+        PlayerSettings.Android.keyaliasName = alias;
+        PlayerSettings.Android.keyaliasPass = password;
+        Debug.Log("SIGNING: release key in use (alias " + alias + ")");
     }
 
     private static void SetupRenderPipeline()
@@ -114,6 +160,12 @@ public static class GameBuild
         pipeline.supportsHDR = false;
         pipeline.msaaSampleCount = 1;
         pipeline.shadowDistance = 40f;
+        pipeline.shadowCascadeCount = 1;
+        pipeline.mainLightShadowmapResolution = 1024;
+        // Soft shadows have no public setter; allow them so the art style test can try them (a light only uses them when it asks).
+        var pipelineObject = new SerializedObject(pipeline);
+        SerializedProperty soft = pipelineObject.FindProperty("m_SoftShadowsSupported");
+        if (soft != null) { soft.boolValue = true; pipelineObject.ApplyModifiedPropertiesWithoutUndo(); }
         EditorUtility.SetDirty(pipeline);
 
         GraphicsSettings.defaultRenderPipeline = pipeline;
@@ -240,6 +292,15 @@ public static class GameBuild
             Model("bld_supply"),     // BuildingKind.SupplyCenter
             Model("bld_barracks"),   // BuildingKind.Barracks
             Model("bld_factory"),    // BuildingKind.VehicleFactory
+        });
+        // Detailed models for the art style test (null = no detailed version of that unit / building).
+        SetObjects(so, "unitModelsHd", new[]
+        {
+            Model("unit_rifleman_hd"), Model("unit_rocket_hd"), null, Model("unit_tank_hd"),
+        });
+        SetObjects(so, "buildingModelsHd", new[]
+        {
+            null, null, null, Model("bld_barracks_hd"), null,
         });
         SetObjects(so, "rockModels", new[] { Model("prop_rock_a"), Model("prop_rock_b"), Model("prop_rock_c") });
         so.FindProperty("palmModel").objectReferenceValue = Model("prop_palm");

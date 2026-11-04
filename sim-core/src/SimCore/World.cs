@@ -222,6 +222,8 @@ namespace SimCore
                 h.Add((int)u.AttackKind);
                 h.Add(u.AttackId);
                 h.Add(u.Cooldown);
+                h.Add(u.Marching ? 1 : 0);
+                h.Add(u.Facing);
             }
             return h.Value;
         }
@@ -282,6 +284,7 @@ namespace SimCore
                 ClearTarget(units[i]); // a move order cancels an attack order
                 units[i].SpeedCap = cap;
                 GoTo(units[i], ClampToMap(cmd.Target + offsets[i]));
+                units[i].Marching = units[i].Moving;
             }
         }
 
@@ -314,6 +317,7 @@ namespace SimCore
             {
                 if (u.Team != TeamPlayer) continue;
                 u.SpeedCap = cap;
+                u.Marching = false;
                 u.AttackKind = cmd.TargetKind;
                 u.AttackId = cmd.TargetId;
                 u.Ordered = true;
@@ -471,6 +475,12 @@ namespace SimCore
             CombatDef def = Defs.Combat(u.Kind);
             int enemyTeam = 1 - u.Team;
 
+            if (u.Marching && u.Moving)
+            {
+                MarchingFight(u, def, enemyTeam);
+                return;
+            }
+
             // Drop a target that is gone.
             Vec2 targetPos = default;
             if (u.AttackKind != AttackKind.None && !TargetPosition(u.AttackKind, u.AttackId, enemyTeam, out targetPos))
@@ -507,6 +517,7 @@ namespace SimCore
             {
                 if (u.Moving) Stop(u);
                 u.AimPoint = aim;
+                if ((aim - u.Pos).SqrLength.Raw > 0) u.Facing = (aim - u.Pos).Normalized(); // a standing unit turns to its target
                 if (u.Cooldown == 0) Fire(u, def, aim);
                 return;
             }
@@ -520,6 +531,71 @@ namespace SimCore
                 if (tooFar) { ClearTarget(u); return; }
             }
             if ((Tick + u.Id) % 10 == 0) GoTo(u, targetPos); // re-plan twice a second at most
+        }
+
+        /// <summary>
+        /// A unit on a move order: it keeps walking, and shoots at anything inside its range and firing arc.
+        /// It never stops or chases; a target that leaves the arc is simply dropped.
+        /// </summary>
+        private void MarchingFight(Unit u, CombatDef def, int enemyTeam)
+        {
+            Vec2 aim = default;
+            Fix64 range2 = def.Range * def.Range;
+
+            if (u.AttackKind != AttackKind.None)
+            {
+                if (!ReachablePoint(u, def, range2, out aim)) ClearTarget(u);
+            }
+
+            if (u.AttackKind == AttackKind.None && (Tick + u.Id) % 3 == 0)
+            {
+                // Nearest enemy unit in range and arc, else nearest building.
+                Fix64 best = range2 + Fix64.One;
+                foreach (Unit t in _units)
+                {
+                    if (t.Team != enemyTeam || t.Hp <= 0) continue;
+                    Fix64 dist = (t.Pos - u.Pos).SqrLength;
+                    if (dist <= range2 && dist < best && InArc(u, def, t.Pos)) { best = dist; u.AttackKind = AttackKind.Unit; u.AttackId = t.Id; }
+                }
+                if (u.AttackKind == AttackKind.None)
+                {
+                    foreach (Building t in _buildings)
+                    {
+                        if (t.Team != enemyTeam || t.Hp <= 0) continue;
+                        Fix64 dist = SqrDistanceToBuilding(u.Pos, t, out Vec2 nearest);
+                        if (dist <= range2 && dist < best && InArc(u, def, nearest)) { best = dist; u.AttackKind = AttackKind.Building; u.AttackId = t.Id; }
+                    }
+                }
+                if (u.AttackKind != AttackKind.None && !ReachablePoint(u, def, range2, out aim)) ClearTarget(u);
+            }
+
+            if (u.AttackKind != AttackKind.None)
+            {
+                u.AimPoint = aim;
+                if (u.Cooldown == 0) Fire(u, def, aim);
+            }
+        }
+
+        /// <summary>True if the current target exists and is inside the unit's range and firing arc; aim = where to shoot.</summary>
+        private bool ReachablePoint(Unit u, CombatDef def, Fix64 range2, out Vec2 aim)
+        {
+            aim = default;
+            int enemyTeam = 1 - u.Team;
+            if (!TargetPosition(u.AttackKind, u.AttackId, enemyTeam, out Vec2 pos)) return false;
+
+            Fix64 dist;
+            aim = pos;
+            if (u.AttackKind == AttackKind.Building) dist = SqrDistanceToBuilding(u.Pos, GetBuilding(u.AttackId), out aim);
+            else dist = (pos - u.Pos).SqrLength;
+            return dist <= range2 && InArc(u, def, aim);
+        }
+
+        /// <summary>Is the point inside the unit's firing arc (centred on the way it faces)?</summary>
+        private static bool InArc(Unit u, CombatDef def, Vec2 point)
+        {
+            Vec2 to = point - u.Pos;
+            if (to.SqrLength.Raw == 0) return true;
+            return u.Facing.Dot(to.Normalized()) >= def.CosHalfArc;
         }
 
         private bool EnemyUnitInReach(Unit u, CombatDef def, int enemyTeam)
@@ -660,6 +736,7 @@ namespace SimCore
 
         private static void Stop(Unit u)
         {
+            u.Marching = false;
             if (u.AttackKind == AttackKind.None) u.SpeedCap = default;
             u.Path = null;
             u.PathIndex = 0;
@@ -683,7 +760,9 @@ namespace SimCore
             }
             else
             {
-                u.Pos = u.Pos + delta.Normalized() * step;
+                Vec2 dir = delta.Normalized();
+                u.Pos = u.Pos + dir * step;
+                u.Facing = dir;
             }
         }
 

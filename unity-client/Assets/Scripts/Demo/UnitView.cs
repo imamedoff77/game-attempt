@@ -9,12 +9,13 @@ public sealed class UnitView : MonoBehaviour
 {
     private Unit _unit;
     private GameObject _selectionRing;
+    private GameObject _fireArc;
     private Quaternion _facing = Quaternion.identity;
 
     public int UnitId => _unit.Id;
     public int Team => _unit.Team;
 
-    public static UnitView Create(Unit unit, GameObject model, Material palette, Material ringMaterial)
+    public static UnitView Create(Unit unit, GameObject model, Material palette, Material ringMaterial, Material arcMaterial)
     {
         var root = new GameObject("Unit " + unit.Id + " " + unit.Kind);
         var view = root.AddComponent<UnitView>();
@@ -31,28 +32,30 @@ public sealed class UnitView : MonoBehaviour
         view._selectionRing.transform.localPosition = new Vector3(0f, 0.06f, 0f);
         view._selectionRing.SetActive(false);
 
-        view.Refresh(0f, false, false);
+        // Firing arc: shown while selected, so you can see which way the unit can shoot.
+        CombatDef combat = Defs.Combat(unit.Kind);
+        view._fireArc = MeshFactory.Spawn("FireArc", MeshFactory.Wedge(combat.Range.ToFloat(), combat.ArcDegrees), arcMaterial, root.transform);
+        view._fireArc.transform.localPosition = new Vector3(0f, 0.05f, 0f);
+        view._fireArc.SetActive(false);
+
+        view.Refresh(0f, false);
+        view.transform.rotation = view._facing; // no turning animation on spawn
         return view;
     }
 
-    public void Refresh(float alpha, bool selected, bool aiming)
+    public void Refresh(float alpha, bool selected)
     {
         Vector3 from = ToUnity(_unit.PrevPos);
         Vector3 to = ToUnity(_unit.Pos);
         transform.position = Vector3.Lerp(from, to, alpha);
 
-        Vector3 moved = to - from;
-        if (aiming)
-        {
-            Vector3 toAim = ToUnity(_unit.AimPoint) - to;
-            toAim.y = 0f;
-            if (toAim.sqrMagnitude > 1e-6f) _facing = Quaternion.LookRotation(toAim);
-        }
-        else if (moved.sqrMagnitude > 1e-8f)
-            _facing = Quaternion.LookRotation(moved);
+        // The simulation decides which way the unit faces (movement direction, or towards its target when it stands and shoots).
+        Vector3 facing = new Vector3(_unit.Facing.X.ToFloat(), 0f, _unit.Facing.Y.ToFloat());
+        if (facing.sqrMagnitude > 1e-6f) _facing = Quaternion.LookRotation(facing);
         transform.rotation = Quaternion.Slerp(transform.rotation, _facing, 1f - Mathf.Exp(-12f * Time.deltaTime));
 
         _selectionRing.SetActive(selected);
+        _fireArc.SetActive(selected);
     }
 
     /// <summary>Sim (x, y) maps onto the Unity ground plane (x, z).</summary>

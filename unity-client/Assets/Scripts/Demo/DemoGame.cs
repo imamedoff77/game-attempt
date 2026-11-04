@@ -23,6 +23,9 @@ public sealed class DemoGame : MonoBehaviour
     [Header("Models (index = enum value of UnitKind / BuildingKind)")]
     [SerializeField] private GameObject[] unitModels;
     [SerializeField] private GameObject[] buildingModels;
+    [Header("Detailed models for the art style test (same indexes, an empty slot = no detailed version)")]
+    [SerializeField] private GameObject[] unitModelsHd;
+    [SerializeField] private GameObject[] buildingModelsHd;
     [SerializeField] private GameObject[] rockModels;
     [SerializeField] private GameObject palmModel;
     [SerializeField] private GameObject cactusModel;
@@ -36,6 +39,7 @@ public sealed class DemoGame : MonoBehaviour
     private readonly List<ShotEvent> _shotBuffer = new List<ShotEvent>();
     private readonly List<int> _removeBuffer = new List<int>();
     private Material _enemyPalette;
+    private Material _arcMaterial;
     private readonly System.Diagnostics.Stopwatch _stepTimer = new System.Diagnostics.Stopwatch();
     private double _stepMsSum, _stepMsWindowMax;
     private int _stepCount;
@@ -51,6 +55,9 @@ public sealed class DemoGame : MonoBehaviour
     private BuildGhost _ghost;
     private BuildingKind _placingKind;
     private bool _overlayWasVisible;
+
+    /// <summary>Art style test: draw the detailed models (where one exists) instead of the simple ones.</summary>
+    public bool DetailedModels { get; private set; }
 
     public World World { get; private set; }
     public RtsCamera Cam { get; private set; }
@@ -93,6 +100,7 @@ public sealed class DemoGame : MonoBehaviour
         World = DemoScenario.Create(); // map, player base and squad, enemy base
         MapGrid map = World.Map;
         _enemyPalette = MakeEnemyPalette();
+        _arcMaterial = new Material(overlayMaterial) { color = new Color(0.4f, 0.85f, 1f, 0.22f) };
         Fx.Init(markerMaterial);
 
         _terrain = new GameObject("Terrain").AddComponent<TerrainView>();
@@ -141,8 +149,8 @@ public sealed class DemoGame : MonoBehaviour
         {
             foreach (Unit unit in World.Units)
                 if (!_views.ContainsKey(unit.Id))
-                    _views[unit.Id] = UnitView.Create(unit, unitModels[(int)unit.Kind],
-                        unit.Team == SimCore.World.TeamEnemy ? _enemyPalette : paletteMaterial, ringMaterial);
+                    _views[unit.Id] = UnitView.Create(unit, UnitModel(unit.Kind),
+                        unit.Team == SimCore.World.TeamEnemy ? _enemyPalette : paletteMaterial, ringMaterial, _arcMaterial);
 
             _removeBuffer.Clear();
             foreach (int id in _views.Keys)
@@ -157,9 +165,37 @@ public sealed class DemoGame : MonoBehaviour
         }
     }
 
+    private GameObject UnitModel(UnitKind kind)
+    {
+        int i = (int)kind;
+        if (DetailedModels && unitModelsHd != null && i < unitModelsHd.Length && unitModelsHd[i] != null) return unitModelsHd[i];
+        return unitModels[i];
+    }
+
+    private GameObject BuildingModel(BuildingKind kind)
+    {
+        int i = (int)kind;
+        if (DetailedModels && buildingModelsHd != null && i < buildingModelsHd.Length && buildingModelsHd[i] != null) return buildingModelsHd[i];
+        return buildingModels[i];
+    }
+
+    /// <summary>Switches between simple and detailed models: every unit and building view is rebuilt (no explosions, selection is cleared).</summary>
+    public void SetDetailedModels(bool on)
+    {
+        if (DetailedModels == on) return;
+        DetailedModels = on;
+        foreach (UnitView v in _views.Values) Destroy(v.gameObject);
+        _views.Clear();
+        foreach (GameObject go in _buildingObjects.Values) Destroy(go);
+        _buildingObjects.Clear();
+        ClearSelection();
+        SyncBuildingViews();
+        SyncUnitViews();
+    }
+
     private GameObject SpawnBuildingView(Building b)
     {
-        GameObject go = Instantiate(buildingModels[(int)b.Kind], transform);
+        GameObject go = Instantiate(BuildingModel(b.Kind), transform);
         go.name = "Building " + b.Kind;
         // The model is centred on its footprint.
         go.transform.position = new Vector3(b.X + b.Width / 2f, 0f, b.Y + b.Height / 2f);
@@ -245,9 +281,7 @@ public sealed class DemoGame : MonoBehaviour
         float alpha = _accumulator / TickSeconds;
         foreach (UnitView view in _views.Values)
         {
-            Unit u = World.GetUnit(view.UnitId);
-            bool aiming = u != null && World.Tick - u.LastShotTick < 8;
-            view.Refresh(alpha, _selected.Contains(view.UnitId), aiming);
+            view.Refresh(alpha, _selected.Contains(view.UnitId));
         }
     }
 

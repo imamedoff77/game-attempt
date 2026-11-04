@@ -1,0 +1,26 @@
+{
+  "version": 1,
+
+  "economy": {
+    "startResources": 500,
+    "hqEnergy": 20,
+    "hqIncomePerMinute": 20,
+    "powerPlantOutput": [120, 80, 60, 50, 40],
+    "supplyCenterIncome": [60, 40, 30, 25, 20]
+  },
+
+  "units": [
+    { "id": "Rifleman",      "class": "Infantry", "producer": "Barracks",       "speedMilli": 3000, "cost": 50,  "buildSeconds": 4,  "hp": 60,  "damage": 6,  "range": 5, "cooldownTicks": 10, "sight": 9,  "arcDegrees": 240, "cosHalfArcMilli": -500 },
+    { "id": "RocketTrooper", "class": "Infantry", "producer": "Barracks",       "speedMilli": 2500, "cost": 80,  "buildSeconds": 6,  "hp": 50,  "damage": 25, "range": 7, "cooldownTicks": 30, "sight": 9,  "arcDegrees": 140, "cosHalfArcMilli": 342 },
+    { "id": "Jeep",          "class": "Vehicle",  "producer": "VehicleFactory", "speedMilli": 6000, "cost": 150, "buildSeconds": 8,  "hp": 100, "damage": 8,  "range": 6, "cooldownTicks": 8,  "sight": 10, "arcDegrees": 180, "cosHalfArcMilli": 0 },
+    { "id": "Tank",          "class": "Vehicle",  "producer": "VehicleFactory", "speedMilli": 2000, "cost": 300, "buildSeconds": 15, "hp": 400, "damage": 40, "range": 8, "cooldownTicks": 30, "sight": 11, "arcDegrees": 90,  "cosHalfArcMilli": 707 }
+  ],
+
+  "buildings": [
+    { "id": "Hq",             "width": 4, "height": 4, "cost": 0,   "energyUse": 0,  "hp": 1500 },
+    { "id": "PowerPlant",     "width": 2, "height": 2, "cost": 100, "energyUse": 0,  "hp": 400 },
+    { "id": "SupplyCenter",   "width": 3, "height": 3, "cost": 150, "energyUse": 20, "hp": 600 },
+    { "id": "Barracks",       "width": 3, "height": 2, "cost": 200, "energyUse": 30, "hp": 700 },
+    { "id": "VehicleFactory", "width": 4, "height": 3, "cost": 300, "energyUse": 50, "hp": 900 }
+  ]
+}
