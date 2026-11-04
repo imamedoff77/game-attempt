@@ -6,6 +6,9 @@ public static class Strings
 {
     private static StringTable _table;
 
+    /// <summary>The game's name: set from game.json when the app is built, so it is never typed in code or texts.</summary>
+    public static string GameName => Application.productName;
+
     public static StringTable Table => _table;
 
     public static void Load(string json)

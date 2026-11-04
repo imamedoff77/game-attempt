@@ -20,8 +20,9 @@ using UnityEngine.Rendering.Universal;
 public static class GameBuild
 {
     private const string ScenePath = "Assets/Scenes/Bootstrap.unity";
-    private const string ApkPath = "Builds/Android/GameAttempt.apk";
-    private const string DevApkPath = "Builds/Android/GameAttempt-dev.apk";
+
+    /// <summary>Name, package id and APK names, all derived from game.json in the repository root.</summary>
+    private static GameIdentity Identity => GameIdentity.Load(GameIdentity.FindFile(Directory.GetCurrentDirectory()));
 
     public static void Prepare()
     {
@@ -48,7 +49,8 @@ public static class GameBuild
 
     private static void Build(bool development)
     {
-        string apkPath = development ? DevApkPath : ApkPath;
+        GameIdentity identity = Identity;
+        string apkPath = development ? identity.DevApk : identity.ReleaseApk;
         try
         {
             SetupRenderPipeline();
@@ -78,9 +80,10 @@ public static class GameBuild
 
     private static void ConfigureAndroid()
     {
-        PlayerSettings.companyName = "imamedoff";
-        PlayerSettings.productName = "GameAttempt";
-        PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.Android, "com.imamedoff.gameattempt");
+        GameIdentity identity = Identity;
+        PlayerSettings.companyName = identity.Company;
+        PlayerSettings.productName = identity.Name; // also the name shown under the app icon
+        PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.Android, identity.PackageId);
 
         // 64-bit ARM needs IL2CPP (Mono only ships 32-bit ARM). Google Play requires 64-bit anyway.
         PlayerSettings.SetScriptingBackend(NamedBuildTarget.Android, ScriptingImplementation.IL2CPP);

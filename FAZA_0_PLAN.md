@@ -43,7 +43,7 @@ Hazırdır: `Defs.cs`-də heç bir rəqəm qalmayıb, JSON-da bir rəqəmi dəyi
 ### 0.4 Layihə kimliyi: ad, paket adı, ikon (~½ gün, **oyunun adı lazımdır**)
 
 - Oyunun adı seçilir. Ad seçiləndən sonra yoxlayıram: Play Store-da eyni/çox oxşar ad, `.com` domen, ticarət nişanı bazasında açıq ziddiyyət (bu hüquqi məsləhət deyil, yalnız ilkin yoxlamadır).
-- Paket adı `com.imamedoff.gameattempt` əvəzinə yekun ada dəyişir (`ProjectSettings.asset`). **Play Store-a yükləndikdən sonra paket adını dəyişmək mümkün deyil**, ona görə bunu indi düzgün etmək vacibdir.
+- Ad **Iron Doctrine** (müvəqqəti, prod-dan əvvəl dəyişə bilər). Ad yalnız `game.json` faylındadır; tətbiqin adı, paket adı (`com.imamedoff.irondoctrine`) və APK adları ondan törəyir (`GameIdentity.cs`, `tools/sync_identity.py`). **Play Store-a yükləndikdən sonra paket adını dəyişmək mümkün deyil**, ona görə prod-dan əvvəl son ad təsdiqlənməlidir.
 - Tətbiqin görünən adı, müvəqqəti ikon (sonra Faza 7-də dəyişir), `versionName` / `versionCode` qaydası.
 
 ### 0.5 İmza açarı (keystore) (~½ gün)
@@ -90,7 +90,7 @@ Realist low-poly + kölgələr telefonu ən çox yoruşan seçimdir. Buna indi b
 - [x] Bütün rəqəmlər `sim-core/src/SimCore/Resources/gamedata.json`-dadır, testlər yaşıldır (113), davranış dəyişməyib. (Üç fayl əvəzinə bir fayl: Unity paketi yalnız öz qovluğunu görür və hash bir yerdən hesablanır.)
 - [x] HUD mətnləri tərcümə cədvəlindən gəlir (`Assets/Resources/Strings/en.json`, hər açarın mövcudluğu testlə yoxlanır).
 - [x] Debug düymələri release build-də yoxdur (telefonda yoxlandı).
-- [ ] Oyunun adı seçilib, paket adı yekundur. **Ad gözlənilir.**
+- [x] Oyunun adı seçildi (Iron Doctrine, müvəqqəti), bir yerdən (`game.json`) idarə olunur. Paket adı prod-dan əvvəl yekunlaşır.
 - [x] Release imza açarı yaradılıb (`~/.config/game-keys/`, repoda yoxdur). **Sənin işin qalıb:** ehtiyat surət (aşağıya bax).
 - [x] Art üslubu A34-də ölçülüb və təsdiqlənib (`art/ART_BIBLE.md`). Sənin baxışın qalıb.
 - [x] `ORIGINALITY.md` və `README.md` var.

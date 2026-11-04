@@ -168,7 +168,7 @@ Tarix: 2026-11-02 · Maşın: CachyOS Linux
 - ✅ `unity-client/` yaradıldı, `sim-core` `com.game.simcore` paketi kimi bağlandı
 - ✅ Komanda xəttindən build: `GameBuild.BuildAndroid` (IL2CPP, ARM64, min API 24, landscape). Build ~4 dəq, APK ~15 MB
 - ✅ Samsung Galaxy A34 (SM-A346E, Android 16) üzərində işləyir: 60 FPS, SimCore determinism testi cihazda OK (ARM64 + IL2CPP, .NET x64 ilə eyni nəticə)
-- ⚠️ Paket adı müvəqqətidir: `com.imamedoff.gameattempt`. Play Store-a yükləmədən əvvəl dəyişdirilməlidir, sonradan dəyişmək olmur
+- ⚠️ Paket adı müvəqqətidir: `com.imamedoff.irondoctrine` (`game.json`-dan törəyir). Play Store-a yükləmədən əvvəl yekunlaşdırılmalıdır, sonradan dəyişmək olmur
 - ⚠️ Unity lisenziya xəbərdarlığı (`Access token is unavailable`) headless build-i dayandırmadı
 
 ## 11. Növbəti addımlar

@@ -70,7 +70,7 @@ Faza 0–3, sadə Faza 4, Faza 5 və Faza 6. Qalanları yeniləmələrlə. Kobud
 
 | Sual | Vəziyyət |
 |---|---|
-| Oyunun adı | açıq |
+| Oyunun adı | ✅ Iron Doctrine (müvəqqəti, prod-dan əvvəl dəyişə bilər). `game.json`-da saxlanır |
 | Mövzu / fraksiya | ✅ Müasir müharibə, xəyali ölkələr (real ölkə adları yoxdur) |
 | Art üslubu | ✅ Daha realist low-poly: tünd tonlar, kölgələr. Telefonda performansı hər addımda ölçürük |
 | Buraxılış dilləri | ✅ 1.0 yalnız İngilis. Mətnlər kodun içinə yazılmır, cədvəldən oxunur, sonra dil əlavə etmək asan olsun |

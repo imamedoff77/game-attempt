@@ -36,3 +36,7 @@ backend/node_modules/
 .DS_Store
 .build/
 unity-client/.utmp/
+
+# Developer-only server address baked into dev builds
+unity-client/Assets/Resources/devserver.txt
+unity-client/Assets/Resources/devserver.txt.meta
