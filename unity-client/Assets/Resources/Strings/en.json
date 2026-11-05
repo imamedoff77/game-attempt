@@ -234,6 +234,8 @@
   "online.connecting": "Connecting...",
   "online.shareCode": "Waiting for your friend. Tell them this code:",
   "online.leave": "Leave",
+  "online.surrender": "Surrender",
+  "online.surrenderSure": "Sure?",
   "online.waitingNetwork": "Waiting for the other player...",
   "online.opponentLeft": "The opponent left the match",
   "online.connectionLost": "Connection lost",

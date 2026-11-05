@@ -114,4 +114,9 @@ namespace SimCore
     public sealed class UpgradeBaseCommand : Command
     {
     }
+
+    /// <summary>The team gives up the match (online: there is no other way to concede). Cannot be undone.</summary>
+    public sealed class SurrenderCommand : Command
+    {
+    }
 }

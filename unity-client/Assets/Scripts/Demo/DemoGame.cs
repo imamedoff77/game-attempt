@@ -323,6 +323,7 @@ public sealed partial class DemoGame : MonoBehaviour
     public void Surrender()
     {
         if (IsOfflineMatch && Outcome == GameOutcome.Playing) Outcome = GameOutcome.Defeat;
+        else if (OnlineMatch && Outcome == GameOutcome.Playing) Issue(new SurrenderCommand()); // both phones see it a moment later, in the same turn
         Paused = false;
     }
 
@@ -680,6 +681,12 @@ public sealed partial class DemoGame : MonoBehaviour
             if (Mission.Status == MissionStatus.Running) return;
             Outcome = Mission.Status == MissionStatus.Won ? GameOutcome.Victory : GameOutcome.Defeat;
             RecordMission();
+            return;
+        }
+        if (OnlineMatch && Online != null && Online.OpponentAbandoned) { Outcome = GameOutcome.Victory; return; }
+        if (OnlineMatch && (World.HasSurrendered(LocalTeam) || World.HasSurrendered(OpponentTeam)))
+        {
+            Outcome = World.HasSurrendered(LocalTeam) ? GameOutcome.Defeat : GameOutcome.Victory;
             return;
         }
         if (!World.HasBuilding(BuildingKind.Hq, LocalTeam)) Outcome = GameOutcome.Defeat;

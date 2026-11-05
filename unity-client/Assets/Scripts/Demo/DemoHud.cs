@@ -79,7 +79,16 @@ public sealed partial class DemoHud : MonoBehaviour
         if (_game.IsOfflineMatch && _game.Outcome == DemoGame.GameOutcome.Playing)
             if (GUI.Button(top[3], Strings.Get("button.pause"), _button)) _game.Paused = true;
         if (_game.OnlineMatch && _game.Outcome == DemoGame.GameOutcome.Playing)
-            if (GUI.Button(top[3], Strings.Get("online.leave"), _button)) LeaveToMenu(); // no forfeit command yet: the opponent sees the player drop
+        {
+            // Giving up needs a second tap so a stray touch does not lose the match.
+            bool armed = Time.unscaledTime < _surrenderArmedUntil;
+            if (GUI.Button(top[3], Strings.Get(armed ? "online.surrenderSure" : "online.surrender"), _button))
+            {
+                if (armed) { _surrenderArmedUntil = 0f; _game.Surrender(); }
+                else _surrenderArmedUntil = Time.unscaledTime + 3f;
+            }
+            if (GUI.Button(top[2], Strings.Get("online.leave"), _button)) LeaveToMenu(); // just drops the connection: the opponent waits, then wins when the grace time ends
+        }
 
         if (_game.SelectedBuilding != null) _menuOpen = false;
         if (_menuOpen && !_game.Placing) DrawBuildMenu(world);
@@ -372,7 +381,9 @@ public sealed partial class DemoHud : MonoBehaviour
             Rect onlineCard = EndCardRect();
             GUI.Box(onlineCard, "");
             GUI.Label(new Rect(onlineCard.x, onlineCard.y, onlineCard.width, onlineCard.height * 0.5f), Strings.Get(won ? "outcome.victoryShort" : "outcome.defeatShort"), style);
-            if (GUI.Button(EndButtonRects(onlineCard)[0], Strings.Get("end.menu"), _button)) LeaveToMenu();
+            Rect menuButton = EndButtonRects(onlineCard)[0];
+            menuButton.x = onlineCard.center.x - menuButton.width / 2f;
+            if (GUI.Button(menuButton, Strings.Get("end.menu"), _button)) LeaveToMenu();
             return;
         }
 
@@ -445,6 +456,8 @@ public sealed partial class DemoHud : MonoBehaviour
     }
 
     // ---------------------------------------------------------------- main menu
+
+    private float _surrenderArmedUntil;
 
     private enum MenuPage { Main, Difficulty, Campaign, Briefing, Armory, Daily, Account, Profile, Online }
     private MenuPage _page = MenuPage.Main;

@@ -30,6 +30,8 @@ namespace SimCore
         public bool Researching => ResearchTicksLeft > 0;
         /// <summary>Places taken by living units and by units waiting in production queues.</summary>
         public int PopUsed { get; internal set; }
+        /// <summary>The team gave up (<see cref="SurrenderCommand"/>): the match is lost for it.</summary>
+        public bool Surrendered { get; internal set; }
         public int PopCap => Economy.PopCap(BaseLevel);
         /// <summary>Resource-ticks collected towards the next whole resource.</summary>
         internal int IncomeProgress;

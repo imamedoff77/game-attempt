@@ -76,6 +76,8 @@ namespace SimCore
         NotSignedIn = 7,
         /// <summary>The same account tried to take both seats of one match.</summary>
         SameAccount = 8,
+        /// <summary>Sent to the player who stayed: the opponent did not come back in time, so the match is given up (a walkover win).</summary>
+        OpponentGone = 9,
     }
 
     /// <summary>Client to server: open a room and wait for an opponent. <see cref="DataHash"/> is <c>Defs.DataHash</c>.</summary>

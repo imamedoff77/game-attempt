@@ -46,6 +46,8 @@ public sealed class OnlineSession
     public string Status { get; private set; } = "Connecting...";
 
     public bool OpponentLeft { get; private set; }
+    /// <summary>The opponent did not come back in time: the match is given up and this player wins.</summary>
+    public bool OpponentAbandoned { get; private set; }
 
     // ---- network measurements: how long a turn takes to come back from the server (it includes waiting for the opponent) ----
     private readonly System.Collections.Generic.Dictionary<int, double> _sentAt = new System.Collections.Generic.Dictionary<int, double>();
@@ -174,6 +176,10 @@ public sealed class OnlineSession
                     Status = "Back in the match. Catching up...";
                     begin = resume;
                     break;
+                case Reject reject when reject.Reason == RejectReason.OpponentGone:
+                    OpponentAbandoned = true;
+                    End("The opponent did not come back");
+                    return null;
                 case Reject reject:
                     End(Reconnecting ? "The match is over (" + reject.Reason + ")" : RefusalText(reject.Reason));
                     return null;

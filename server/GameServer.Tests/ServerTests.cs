@@ -196,6 +196,21 @@ public class ServerTests : IDisposable
     }
 
     [Fact]
+    public void ASurrender_ReachesBothWorldsInTheSameTurn()
+    {
+        MatchServer server = NewServer();
+        var (host, guest) = StartMatch(server);
+        Assert.True(PlayBoth(host, guest, 100));
+        guest.Client!.QueueCommand(new SurrenderCommand());
+        Assert.True(PlayBoth(host, guest, 400));
+        Assert.True(host.World!.HasSurrendered(1));
+        Assert.True(guest.World!.HasSurrendered(1));
+        Assert.False(host.World.HasSurrendered(0));
+        Assert.False(host.Client!.Desynced);
+        Assert.Equal(host.World.StateHash(), guest.World.StateHash());
+    }
+
+    [Fact]
     public void ADifferentWorld_IsDetected_BothPlayersAreToldAndTheLogIsSaved()
     {
         MatchServer server = NewServer();
@@ -434,6 +449,8 @@ public class ServerTests : IDisposable
         guest.Link.Dispose();
 
         Assert.True(WaitFor(() => host.PeerLeft != null, 5000, host));
+        Assert.True(WaitFor(() => host.Rejected != null, 6000, host), "the remaining player was not told");
+        Assert.Equal(RejectReason.OpponentGone, host.Rejected!.Reason);
         Assert.True(WaitFor(() => host.Link.Closed, 6000, host), "the remaining player was not released");
         Assert.True(WaitFor(() => server.RoomCount == 0, 6000));
 

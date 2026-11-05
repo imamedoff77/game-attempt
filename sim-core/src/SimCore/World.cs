@@ -260,6 +260,7 @@ namespace SimCore
                 h.Add(p.IncomeProgress);
                 h.Add(p.BaseLevel);
                 for (int k = 0; k < p.UpgradeTiers.Length; k++) h.Add(p.UpgradeTiers[k]);
+                if (p.Surrendered) h.Add(0x5355); // only when it happened, so other matches keep their hash
                 h.Add((int)p.ResearchKind);
                 h.Add(p.ResearchTicksLeft);
                 h.Add(p.UpgradeTicksLeft);
@@ -345,6 +346,7 @@ namespace SimCore
                     case CancelBuildCommand cancelBuild: ApplyCancelBuild(cancelBuild); break;
                     case UpgradeBaseCommand upgrade: ApplyUpgradeBase(upgrade); break;
                     case ResearchCommand research: ApplyResearch(research); break;
+                    case SurrenderCommand surrender: _players[surrender.Team].Surrendered = true; break;
                 }
             }
             _pending.Clear();
@@ -656,6 +658,8 @@ namespace SimCore
             foreach (Building b in _buildings) if (b.Team == team && b.Hp > 0) n++;
             return n;
         }
+
+        public bool HasSurrendered(int team) => _players[team].Surrendered;
 
         public bool HasBuilding(BuildingKind kind, int team)
         {

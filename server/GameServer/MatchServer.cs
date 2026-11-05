@@ -400,7 +400,7 @@ public sealed class MatchServer
                     {
                         // Nobody came back in time: the match is over for whoever is still here.
                         room.Finished = true;
-                        foreach (Peer? p in room.Players) p?.CloseAfterFlush();
+                        foreach (Peer? p in room.Players) { p?.Send(new Reject(RejectReason.OpponentGone)); p?.CloseAfterFlush(); }
                         remove = room.PlayerCount == 0;
                     }
                 }

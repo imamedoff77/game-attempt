@@ -235,6 +235,28 @@ public class MatchRulesTests
         Assert.Equal(77, ((CancelBuildCommand)c).BuildingId);
         Assert.True(CommandCodec.TryDecode(CommandCodec.Encode(new UpgradeBaseCommand()), out c));
         Assert.IsType<UpgradeBaseCommand>(c);
+        Assert.True(CommandCodec.TryDecode(CommandCodec.Encode(new SurrenderCommand()), out c));
+        Assert.IsType<SurrenderCommand>(c);
+    }
+
+    [Fact]
+    public void Surrender_MarksOnlyTheSurrenderingTeam_ChangesTheHash_AndIsTheSameInTwoWorlds()
+    {
+        World Play(bool surrender)
+        {
+            var w = NewWorld();
+            if (surrender) w.Enqueue(new SurrenderCommand(), B);
+            Run(w, 30);
+            return w;
+        }
+
+        World plain = Play(false), gaveUp = Play(true), again = Play(true);
+        Assert.False(plain.HasSurrendered(A));
+        Assert.False(plain.HasSurrendered(B));
+        Assert.False(gaveUp.HasSurrendered(A));
+        Assert.True(gaveUp.HasSurrendered(B));
+        Assert.NotEqual(plain.StateHash(), gaveUp.StateHash());
+        Assert.Equal(gaveUp.StateHash(), again.StateHash());
     }
 
     [Fact]

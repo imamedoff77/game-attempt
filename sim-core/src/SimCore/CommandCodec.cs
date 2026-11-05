@@ -18,7 +18,7 @@ namespace SimCore
         /// <summary>Map coordinates beyond this are never valid (keeps later arithmetic far from overflow).</summary>
         private const int MaxCoordinate = 4096;
 
-        private const byte TypeMove = 1, TypeBuild = 2, TypeQueue = 3, TypeCancel = 4, TypeRally = 5, TypeAttack = 6, TypeCancelBuild = 7, TypeUpgradeBase = 8, TypeResearch = 9;
+        private const byte TypeMove = 1, TypeBuild = 2, TypeQueue = 3, TypeCancel = 4, TypeRally = 5, TypeAttack = 6, TypeCancelBuild = 7, TypeUpgradeBase = 8, TypeResearch = 9, TypeSurrender = 10;
 
         // ---------------------------------------------------------------- one command
 
@@ -124,6 +124,9 @@ namespace SimCore
                     w.WriteByte(TypeResearch);
                     w.WriteByte((byte)rc.Kind);
                     break;
+                case SurrenderCommand _:
+                    w.WriteByte(TypeSurrender);
+                    break;
                 default:
                     throw new ArgumentException("unknown command type " + (command == null ? "null" : command.GetType().Name));
             }
@@ -198,6 +201,9 @@ namespace SimCore
                         command = new ResearchCommand((UpgradeKind)kind);
                         return true;
                     }
+                case TypeSurrender:
+                    command = new SurrenderCommand();
+                    return true;
                 default:
                     return false;
             }
