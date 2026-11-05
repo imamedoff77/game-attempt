@@ -33,4 +33,12 @@ public static class Strings
     public static string MissionName(int number) => Get("mission." + number + ".name");
 
     public static string MissionBrief(int number) => Get("mission." + number + ".brief");
+
+    public static string TutorialText(int step) => Get("tutorial." + step);
+
+    public static string DailyTaskText(DailyTask task)
+    {
+        string key = "daily.task." + task.Kind + (task.Kind == DailyTaskKind.WinMission && task.Target > 1 ? "s" : "");
+        return Get(key, task.Target);
+    }
 }

@@ -95,6 +95,16 @@ public sealed class DemoGame : MonoBehaviour
     /// <summary>The player's permanent unit upgrades, bought with campaign credits.</summary>
     public Armory Armory { get; private set; }
     private const string ArmoryKey = "armory.levels";
+    /// <summary>The daily login reward and daily tasks (local clock for now).</summary>
+    public DailyProgress Daily { get; private set; }
+    private const string DailyKey = "daily.progress";
+    /// <summary>The first mission's guided hints: 0..3 are the steps, -1 means off (already done, skipped or another mode).</summary>
+    public int TutorialStep { get; private set; } = -1;
+    private bool _tutorialDone;
+    private int _ordersIssued;
+    private const string TutorialKey = "tutorial.done";
+    public const int TutorialLastStep = 3;
+    public static int Today => (int)(System.DateTime.Now.Date - new System.DateTime(1970, 1, 1)).TotalDays;
     /// <summary>Credits the mission just finished paid out (0 when lost or nothing new was earned).</summary>
     public int MissionPaid { get; private set; }
     private bool _missionRecorded;
@@ -188,6 +198,8 @@ public sealed class DemoGame : MonoBehaviour
         _missionRecorded = false;
         MissionPaid = 0;
         Armory.Apply(Mission.World, 0);
+        _ordersIssued = 0;
+        TutorialStep = number == 1 && !_tutorialDone ? 0 : -1;
         Building hq = null;
         foreach (Building b in Mission.World.Buildings) if (b.Team == 0 && b.Kind == BuildingKind.Hq) hq = b;
         LoadWorld(Mission.World, hq != null ? new Vector2Int(hq.X, hq.Y) : new Vector2Int(8, 8), 0);
@@ -204,6 +216,28 @@ public sealed class DemoGame : MonoBehaviour
         string levels = null;
         try { levels = PlayerPrefs.GetString(ArmoryKey, ""); } catch (System.Exception) { }
         Armory = Armory.Parse(levels);
+        string daily = null;
+        try { daily = PlayerPrefs.GetString(DailyKey, ""); } catch (System.Exception) { }
+        Daily = DailyProgress.Parse(daily);
+        try { _tutorialDone = PlayerPrefs.GetInt(TutorialKey, 0) != 0; } catch (System.Exception) { }
+    }
+
+    public void FinishTutorial()
+    {
+        TutorialStep = -1;
+        _tutorialDone = true;
+        try { PlayerPrefs.SetInt(TutorialKey, 1); PlayerPrefs.Save(); } catch (System.Exception) { }
+    }
+
+    // Moves the hints along as the player does what the current one asks.
+    private void UpdateTutorial()
+    {
+        if (TutorialStep < 0) return;
+        if (Mode != GameMode.Campaign || Outcome == GameOutcome.Defeat) { TutorialStep = -1; return; }
+        if (Outcome == GameOutcome.Victory) { FinishTutorial(); return; }
+        if (TutorialStep == 0 && SelectedCount > 0) TutorialStep = 1;
+        else if (TutorialStep == 1 && _ordersIssued > 0) TutorialStep = 2;
+        else if (TutorialStep == 2 && UnitsBuilt > 0) TutorialStep = 3;
     }
 
     private void SaveProgress()
@@ -212,6 +246,7 @@ public sealed class DemoGame : MonoBehaviour
         {
             PlayerPrefs.SetString(ProgressKey, Progress.Serialize());
             PlayerPrefs.SetString(ArmoryKey, Armory.Serialize());
+            PlayerPrefs.SetString(DailyKey, Daily.Serialize());
             PlayerPrefs.Save();
         }
         catch (System.Exception) { }
@@ -224,6 +259,29 @@ public sealed class DemoGame : MonoBehaviour
         SaveProgress();
         Sfx.Play("place", 0.8f, 0f);
         return true;
+    }
+
+    public void ClaimDailyReward()
+    {
+        if (Daily.ClaimReward(Today, Progress) == 0) return;
+        SaveProgress();
+        Sfx.Play("place", 0.8f, 0f);
+    }
+
+    public void ClaimDailyTask(int task)
+    {
+        if (Daily.ClaimTask(Today, task, Progress) == 0) return;
+        SaveProgress();
+        Sfx.Play("place", 0.8f, 0f);
+    }
+
+    // A finished match against the computer counts towards the daily tasks (giving up in the first minute does not).
+    private void RecordDaily()
+    {
+        bool won = Outcome == GameOutcome.Victory;
+        if (won || MatchSeconds >= 60f) Daily.Report(Today, DailyTaskKind.PlayMatches);
+        if (won) Daily.Report(Today, Mode == GameMode.Campaign ? DailyTaskKind.WinMission : DailyTaskKind.WinSkirmish);
+        SaveProgress();
     }
 
     private void BeginPlay()
@@ -317,6 +375,7 @@ public sealed class DemoGame : MonoBehaviour
     /// <summary>Every command goes through here. Online it is sent to the server and played when both players have it.</summary>
     private void Issue(Command command)
     {
+        _ordersIssued++;
         if (OnlineMatch)
         {
             // While reconnecting or replaying the screen shows an old situation: orders given now would make no sense.
@@ -557,10 +616,12 @@ public sealed class DemoGame : MonoBehaviour
         UpdateGhost();
         UpdateSelectionMarkers();
         UpdateOutcome();
+        UpdateTutorial();
         if (Outcome != GameOutcome.Playing && !_outcomeSoundPlayed && IsOfflineMatch)
         {
             _outcomeSoundPlayed = true;
             Sfx.Play(Outcome == GameOutcome.Victory ? "victory" : "defeat", 0.9f, 0f);
+            RecordDaily();
         }
 
         // Bullet tracers for the shots fired in the ticks just simulated.

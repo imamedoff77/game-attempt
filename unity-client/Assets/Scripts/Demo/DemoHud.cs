@@ -105,6 +105,7 @@ public sealed partial class DemoHud : MonoBehaviour
         DrawOnlineBanner();
         if (_game.IsOfflineMatch) DrawMatchClock();
         if (_game.Mode == DemoGame.GameMode.Campaign) DrawMissionHud();
+        if (_game.TutorialStep >= 0 && !_game.Paused && _game.Outcome == DemoGame.GameOutcome.Playing) DrawTutorial();
         if (_game.Paused) DrawPauseDialog();
 
         if (_game.Touch.BoxRect.HasValue)
@@ -434,7 +435,7 @@ public sealed partial class DemoHud : MonoBehaviour
 
     // ---------------------------------------------------------------- main menu
 
-    private enum MenuPage { Main, Difficulty, Campaign, Briefing, Armory }
+    private enum MenuPage { Main, Difficulty, Campaign, Briefing, Armory, Daily }
     private MenuPage _page = MenuPage.Main;
     private int _briefingMission = 1;
 
@@ -458,17 +459,20 @@ public sealed partial class DemoHud : MonoBehaviour
         if (_page == MenuPage.Campaign) { DrawCampaignList(); return; }
         if (_page == MenuPage.Briefing) { DrawBriefing(); return; }
         if (_page == MenuPage.Armory) { DrawArmory(); return; }
+        if (_page == MenuPage.Daily) { DrawDaily(); return; }
 
         GUI.Label(new Rect(0f, Screen.height * 0.08f, Screen.width, Screen.height * 0.18f), Application.productName, title);
 
-        Rect[] buttons = MenuColumn(4);
+        Rect[] buttons = MenuColumn(_page == MenuPage.Main ? MainMenuButtons : 4);
         if (_page == MenuPage.Main)
         {
             if (GUI.Button(buttons[0], Strings.Get("mode.campaign"), _button)) _page = MenuPage.Campaign;
             if (GUI.Button(buttons[1], Strings.Get("mode.vsComputer"), _button)) _page = MenuPage.Difficulty;
             if (GUI.Button(buttons[2], Strings.Get("mode.armory"), _button)) _page = MenuPage.Armory;
+            string daily = Strings.Get("mode.daily") + (_game.Daily.HasSomethingToClaim(DemoGame.Today) ? "  (!)" : "");
+            if (GUI.Button(buttons[3], daily, _button)) _page = MenuPage.Daily;
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
-            if (GUI.Button(buttons[3], Strings.Get("mode.sandbox"), _button)) _game.StartDemo();
+            if (GUI.Button(buttons[4], Strings.Get("mode.sandbox"), _button)) _game.StartDemo();
 #endif
             return;
         }
@@ -486,10 +490,13 @@ public sealed partial class DemoHud : MonoBehaviour
         _page = campaign ? MenuPage.Campaign : MenuPage.Main;
     }
 
+    private const int MainMenuButtons = 5;
+
     private static Rect[] MenuColumn(int count)
     {
-        float w = Screen.width * 0.36f, h = Screen.height * 0.12f, gap = Screen.height * 0.025f;
-        float x = (Screen.width - w) / 2f, y = Screen.height * 0.32f;
+        bool tight = count > 4;
+        float w = Screen.width * 0.36f, h = Screen.height * (tight ? 0.1f : 0.12f), gap = Screen.height * (tight ? 0.02f : 0.025f);
+        float x = (Screen.width - w) / 2f, y = Screen.height * (tight ? 0.3f : 0.32f);
         var rects = new Rect[count];
         for (int i = 0; i < count; i++) rects[i] = new Rect(x, y + i * (h + gap), w, h);
         return rects;
