@@ -13,6 +13,12 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<AccountStore>();
 builder.Services.AddSingleton<PasswordHasher>();
 builder.Services.AddSingleton<IGoogleVerifier, GoogleVerifier>();
+builder.Services.AddSingleton<IPlayVerifier>(sp =>
+{
+    StoreOptions store = sp.GetRequiredService<AccountOptions>().Store;
+    if (!string.IsNullOrEmpty(store.ServiceAccountJsonPath) && !string.IsNullOrEmpty(store.PackageName)) return new GooglePlayVerifier(store);
+    return store.AllowDevPurchases ? new DevPlayVerifier() : new NoPlayVerifier();
+});
 builder.Services.AddSingleton<IEmailSender>(sp =>
 {
     var options = sp.GetRequiredService<AccountOptions>();
@@ -33,6 +39,7 @@ app.UseRateLimiter();
 await app.Services.GetRequiredService<AccountStore>().InitAsync();
 app.MapGet("/", () => "Account server");
 app.MapAccountEndpoints();
+app.MapStoreEndpoints();
 app.Run();
 
 public partial class Program;

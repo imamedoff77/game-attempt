@@ -16,6 +16,10 @@ internal sealed class Peer
     public Room? Room;
     public int Team = -1;
     public int Violations;
+    /// <summary>True while the player waits in the matchmaking line (guarded by the server's queue lock).</summary>
+    public bool Queued;
+    /// <summary>When this player last said something (for the chat rate limit).</summary>
+    public long LastChatMs = long.MinValue / 2;
     public string Name { get; }
 
     public Peer(TcpClient tcp, int maxOutbox, string name)

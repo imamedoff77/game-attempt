@@ -26,6 +26,21 @@ public sealed class ServerOptions
     /// <summary>How long a started match waits for a player who lost the link to come back.</summary>
     public TimeSpan ReconnectGrace { get; init; } = TimeSpan.FromSeconds(60);
 
+    /// <summary>Matchmaking: two players may be paired when their ratings differ by at most this much...</summary>
+    public int QueueWindowBase { get; init; } = 100;
+
+    /// <summary>...plus this much for every second the longer-waiting of the two has waited (so nobody waits forever).</summary>
+    public int QueueWindowPerSecond { get; init; } = 50;
+
+    /// <summary>
+    /// Ranked results are checked by replaying the match from the relay's log (needs the balance data loaded with <c>Defs.Load</c>);
+    /// the players' claims alone never change a rating. Also refuses ranked players whose balance data differs from the server's.
+    /// </summary>
+    public bool VerifyResults { get; init; } = true;
+
+    /// <summary>After one player reported the winner, how long to wait for the other to say the same before believing the one who spoke.</summary>
+    public TimeSpan ReportWait { get; init; } = TimeSpan.FromSeconds(30);
+
     /// <summary>
     /// When set, only signed-in players may create or join rooms (the token is checked with the account server) and each one's Armory
     /// is limited to what their account holds. Null = open server for development: guests allowed, the Armory they claim is used.

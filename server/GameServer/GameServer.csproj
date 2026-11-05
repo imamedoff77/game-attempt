@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\sim-core\src\SimCore\SimCore.csproj" />
+    <None Include="..\..\sim-core\src\SimCore\Resources\gamedata.json" Link="gamedata.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

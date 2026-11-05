@@ -2,14 +2,20 @@ using Npgsql;
 
 namespace AccountServer;
 
-public sealed record User(long Id, string Email, string? PasswordHash, bool EmailVerified, string DisplayName, string? GoogleSub, int FailedLogins, DateTimeOffset? LockedUntil);
+public sealed record User(long Id, string Email, string? PasswordHash, bool EmailVerified, string DisplayName, string? GoogleSub, int FailedLogins, DateTimeOffset? LockedUntil, int Rating = 1000, int RatedGames = 0, int RatedWins = 0);
+
+/// <summary>What a ranked match did to the two ratings (see <see cref="AccountStore.RecordRatedMatch"/>).</summary>
+public sealed record RatedResult(bool AlreadyRecorded, int WinnerOld, int WinnerNew, int LoserOld, int LoserNew);
 
 public enum ResetResult { Ok, Invalid }
+
+public sealed record PurchaseRecord(long Id, long UserId, string ProductId, int Credits, bool Delivered);
+public sealed record BoosterRecord(string Kind, DateTimeOffset ExpiresAt);
 
 /// <summary>All database access of the account server (plain SQL, one place).</summary>
 public sealed class AccountStore : IDisposable
 {
-    private const string UserColumns = "id, email, password_hash, email_verified, display_name, google_sub, failed_logins, locked_until";
+    private const string UserColumns = "id, email, password_hash, email_verified, display_name, google_sub, failed_logins, locked_until, rating, rated_games, rated_wins";
     private readonly NpgsqlDataSource _db;
 
     public AccountStore(AccountOptions options)
@@ -29,7 +35,7 @@ public sealed class AccountStore : IDisposable
 
     private static User ReadUser(NpgsqlDataReader r) => new(
         r.GetInt64(0), r.GetString(1), r.IsDBNull(2) ? null : r.GetString(2), r.GetBoolean(3), r.GetString(4),
-        r.IsDBNull(5) ? null : r.GetString(5), r.GetInt32(6), r.IsDBNull(7) ? null : r.GetFieldValue<DateTimeOffset>(7));
+        r.IsDBNull(5) ? null : r.GetString(5), r.GetInt32(6), r.IsDBNull(7) ? null : r.GetFieldValue<DateTimeOffset>(7), r.GetInt32(8), r.GetInt32(9), r.GetInt32(10));
 
     private async Task<User?> QueryUser(string where, string name, object value)
     {
@@ -124,7 +130,7 @@ public sealed class AccountStore : IDisposable
     public async Task<User?> FindSessionUser(byte[] tokenHash, DateTimeOffset now)
     {
         await using NpgsqlCommand cmd = _db.CreateCommand(
-            "select u.id, u.email, u.password_hash, u.email_verified, u.display_name, u.google_sub, u.failed_logins, u.locked_until " +
+            "select u.id, u.email, u.password_hash, u.email_verified, u.display_name, u.google_sub, u.failed_logins, u.locked_until, u.rating, u.rated_games, u.rated_wins " +
             "from sessions s join users u on u.id = s.user_id where s.token_hash = @h and s.expires_at > @now");
         cmd.Parameters.AddWithValue("h", tokenHash);
         cmd.Parameters.AddWithValue("now", now);
@@ -227,5 +233,139 @@ public sealed class AccountStore : IDisposable
         }
         (long current, string data) = await GetProfile(userId);
         return (false, current, data);
+    }
+
+    // ---- ranked matches ----
+
+    /// <summary>
+    /// Counts a finished ranked match once per <paramref name="matchId"/> (asking again changes nothing and returns what was decided the first time).
+    /// Null when one of the two accounts does not exist (deleted meanwhile) or both are the same.
+    /// </summary>
+    public async Task<RatedResult?> RecordRatedMatch(string matchId, long winnerId, long loserId, DateTimeOffset now)
+    {
+        if (winnerId == loserId) return null;
+        await using NpgsqlConnection conn = await _db.OpenConnectionAsync();
+        await using NpgsqlTransaction tx = await conn.BeginTransactionAsync();
+
+        await using (var known = new NpgsqlCommand("select winner_old, winner_new, loser_old, loser_new from rated_matches where match_id = @m", conn, tx))
+        {
+            known.Parameters.AddWithValue("m", matchId);
+            await using NpgsqlDataReader r = await known.ExecuteReaderAsync();
+            if (await r.ReadAsync()) return new RatedResult(true, r.GetInt32(0), r.GetInt32(1), r.GetInt32(2), r.GetInt32(3));
+        }
+
+        // Lock both rows in id order so two matches at once cannot deadlock.
+        var rows = new Dictionary<long, (int Rating, int Games)>();
+        await using (var select = new NpgsqlCommand("select id, rating, rated_games from users where id = any(@ids) order by id for update", conn, tx))
+        {
+            select.Parameters.AddWithValue("ids", new[] { winnerId, loserId });
+            await using NpgsqlDataReader r = await select.ExecuteReaderAsync();
+            while (await r.ReadAsync()) rows[r.GetInt64(0)] = (r.GetInt32(1), r.GetInt32(2));
+        }
+        if (!rows.TryGetValue(winnerId, out var w) || !rows.TryGetValue(loserId, out var l)) return null;
+
+        SimCore.Rating.Apply(w.Rating, w.Games, l.Rating, l.Games, out int winnerNew, out int loserNew);
+        await using (var update = new NpgsqlCommand(
+            "update users set rating = @r, rated_games = rated_games + 1, rated_wins = rated_wins + @win where id = @u", conn, tx))
+        {
+            NpgsqlParameter pRating = update.Parameters.AddWithValue("r", 0);
+            NpgsqlParameter pWin = update.Parameters.AddWithValue("win", 0);
+            NpgsqlParameter pUser = update.Parameters.AddWithValue("u", 0L);
+            foreach ((long id, int rating, int win) in new[] { (winnerId, winnerNew, 1), (loserId, loserNew, 0) })
+            {
+                pRating.Value = rating;
+                pWin.Value = win;
+                pUser.Value = id;
+                await update.ExecuteNonQueryAsync();
+            }
+        }
+        await using (var insert = new NpgsqlCommand(
+            "insert into rated_matches (match_id, winner_id, loser_id, winner_old, winner_new, loser_old, loser_new, created_at) values (@m, @w, @l, @wo, @wn, @lo, @ln, @t)", conn, tx))
+        {
+            insert.Parameters.AddWithValue("m", matchId);
+            insert.Parameters.AddWithValue("w", winnerId);
+            insert.Parameters.AddWithValue("l", loserId);
+            insert.Parameters.AddWithValue("wo", w.Rating);
+            insert.Parameters.AddWithValue("wn", winnerNew);
+            insert.Parameters.AddWithValue("lo", l.Rating);
+            insert.Parameters.AddWithValue("ln", loserNew);
+            insert.Parameters.AddWithValue("t", now);
+            await insert.ExecuteNonQueryAsync();
+        }
+        await tx.CommitAsync();
+        return new RatedResult(false, w.Rating, winnerNew, l.Rating, loserNew);
+    }
+
+    // ---- store ----
+
+    public async Task<PurchaseRecord?> FindPurchase(byte[] tokenHash)
+    {
+        await using NpgsqlCommand cmd = _db.CreateCommand("select id, user_id, product_id, credits, delivered from purchases where token_hash = @h");
+        cmd.Parameters.AddWithValue("h", tokenHash);
+        await using NpgsqlDataReader r = await cmd.ExecuteReaderAsync();
+        return await r.ReadAsync() ? new PurchaseRecord(r.GetInt64(0), r.GetInt64(1), r.GetString(2), r.GetInt32(3), r.GetBoolean(4)) : null;
+    }
+
+    /// <summary>
+    /// Records a paid purchase once (the token is unique) and gives what it contains: credits wait to be collected by the game, a booster
+    /// starts or extends right away. Returns null when the token was already recorded (by a parallel request).
+    /// </summary>
+    public async Task<PurchaseRecord?> AddPurchase(long userId, Product product, byte[] tokenHash, string orderId, DateTimeOffset now)
+    {
+        await using NpgsqlConnection conn = await _db.OpenConnectionAsync();
+        await using NpgsqlTransaction tx = await conn.BeginTransactionAsync();
+        long id;
+        await using (var insert = new NpgsqlCommand(
+            "insert into purchases (user_id, product_id, token_hash, order_id, credits, delivered, created_at) values (@u, @p, @h, @o, @c, @d, @t) on conflict (token_hash) do nothing returning id", conn, tx))
+        {
+            insert.Parameters.AddWithValue("u", userId);
+            insert.Parameters.AddWithValue("p", product.Id);
+            insert.Parameters.AddWithValue("h", tokenHash);
+            insert.Parameters.AddWithValue("o", orderId);
+            insert.Parameters.AddWithValue("c", product.Credits);
+            insert.Parameters.AddWithValue("d", product.Credits == 0); // nothing to collect for a booster
+            insert.Parameters.AddWithValue("t", now);
+            object? result = await insert.ExecuteScalarAsync();
+            if (result is not long newId) return null;
+            id = newId;
+        }
+        if (product.Kind == ProductKind.Booster)
+        {
+            await using var booster = new NpgsqlCommand(
+                @"insert into boosters (user_id, kind, expires_at) values (@u, @k, @t + make_interval(days => @d))
+                  on conflict (user_id, kind) do update set expires_at = greatest(boosters.expires_at, @t) + make_interval(days => @d)", conn, tx);
+            booster.Parameters.AddWithValue("u", userId);
+            booster.Parameters.AddWithValue("k", product.Booster);
+            booster.Parameters.AddWithValue("t", now);
+            booster.Parameters.AddWithValue("d", product.BoosterDays);
+            await booster.ExecuteNonQueryAsync();
+        }
+        await tx.CommitAsync();
+        return new PurchaseRecord(id, userId, product.Id, product.Credits, product.Credits == 0);
+    }
+
+    public async Task<List<PurchaseRecord>> PendingGrants(long userId)
+    {
+        await using NpgsqlCommand cmd = _db.CreateCommand("select id, user_id, product_id, credits, delivered from purchases where user_id = @u and not delivered order by id");
+        cmd.Parameters.AddWithValue("u", userId);
+        var list = new List<PurchaseRecord>();
+        await using NpgsqlDataReader r = await cmd.ExecuteReaderAsync();
+        while (await r.ReadAsync()) list.Add(new PurchaseRecord(r.GetInt64(0), r.GetInt64(1), r.GetString(2), r.GetInt32(3), r.GetBoolean(4)));
+        return list;
+    }
+
+    /// <summary>The game has added these purchases' credits to the player's wallet: they will not be offered again.</summary>
+    public Task AckGrants(long userId, long[] ids) =>
+        Exec("update purchases set delivered = true where user_id = @u and id = any(@ids)", ("u", userId), ("ids", ids));
+
+    public async Task<List<BoosterRecord>> ActiveBoosters(long userId, DateTimeOffset now)
+    {
+        await using NpgsqlCommand cmd = _db.CreateCommand("select kind, expires_at from boosters where user_id = @u and expires_at > @now order by kind");
+        cmd.Parameters.AddWithValue("u", userId);
+        cmd.Parameters.AddWithValue("now", now);
+        var list = new List<BoosterRecord>();
+        await using NpgsqlDataReader r = await cmd.ExecuteReaderAsync();
+        while (await r.ReadAsync()) list.Add(new BoosterRecord(r.GetString(0), r.GetFieldValue<DateTimeOffset>(1)));
+        return list;
     }
 }

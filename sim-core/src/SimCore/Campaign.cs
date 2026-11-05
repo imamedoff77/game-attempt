@@ -9,6 +9,9 @@ namespace SimCore
     {
         public const int Size = 64;
 
+        /// <summary>The mission that must be won to unlock online play (missions open one after the other, so this means the first three).</summary>
+        public const int OnlineUnlockMission = 3;
+
         public static IReadOnlyList<Mission> Missions { get; } = Build();
 
         public static Mission Get(int number) => Missions[number - 1];
@@ -224,7 +227,11 @@ namespace SimCore
     {
         private readonly int[] _stars;
 
-        public int Credits { get; private set; }
+        // The wallet is three counters that only ever grow, so that two copies (two phones) can be joined without losing anything:
+        // credits earned in play, credits spent in the armory, credits bought in the store. What is left is earned + bought - spent.
+        private int _earned, _spent, _bought;
+
+        public int Credits => Math.Max(0, _earned + _bought - _spent);
 
         public CampaignProgress()
         {
@@ -239,6 +246,9 @@ namespace SimCore
         }
 
         /// <summary>The first mission is open from the start; the next ones open once the one before has been won.</summary>
+        /// <summary>Online matches open once the first <see cref="Campaign.OnlineUnlockMission"/> missions are won: by then a player knows the controls and the units.</summary>
+        public bool OnlineUnlocked => Stars(Campaign.OnlineUnlockMission) > 0;
+
         public bool IsUnlocked(int mission) => mission == 1 || (mission >= 2 && mission <= _stars.Length && _stars[mission - 2] > 0);
 
         /// <summary>The first mission that has not been won yet (the last one when everything is done).</summary>
@@ -251,17 +261,23 @@ namespace SimCore
             }
         }
 
-        /// <summary>Adds credits (development and, later, other rewards).</summary>
+        /// <summary>Adds credits earned by playing (missions, daily rewards) or given for development.</summary>
         public void Add(int amount)
         {
-            if (amount > 0) Credits += amount;
+            if (amount > 0) _earned += amount;
+        }
+
+        /// <summary>Adds credits the player paid for. Kept apart from <see cref="Add"/> only so that joining two copies never loses them.</summary>
+        public void AddPurchased(int amount)
+        {
+            if (amount > 0) _bought += amount;
         }
 
         /// <summary>Takes credits out of the wallet (the armory). False, and nothing changes, when there are not enough.</summary>
         public bool Spend(int amount)
         {
             if (amount < 0 || amount > Credits) return false;
-            Credits -= amount;
+            _spent += amount;
             return true;
         }
 
@@ -274,15 +290,17 @@ namespace SimCore
             if (newStars <= 0) return 0;
             int paid = newStars * Campaign.Get(mission).CreditsPerStar;
             _stars[mission - 1] = stars;
-            Credits += paid;
+            _earned += paid;
             return paid;
         }
 
-        /// <summary>Joins another copy of the same player's progress (another device): the best stars of each mission and the larger wallet.</summary>
+        /// <summary>Joins another copy of the same player's progress (another device): the best stars of each mission and the larger of each wallet counter.</summary>
         public void MergeFrom(CampaignProgress other)
         {
             for (int i = 0; i < _stars.Length; i++) _stars[i] = Math.Max(_stars[i], other._stars[i]);
-            Credits = Math.Max(Credits, other.Credits);
+            _earned = Math.Max(_earned, other._earned);
+            _spent = Math.Max(_spent, other._spent);
+            _bought = Math.Max(_bought, other._bought);
         }
 
         public string Serialize()
@@ -293,7 +311,7 @@ namespace SimCore
                 if (i > 0) sb.Append(',');
                 sb.Append(_stars[i]);
             }
-            return sb.Append('|').Append(Credits).ToString();
+            return sb.Append('|').Append(_earned).Append('|').Append(_spent).Append('|').Append(_bought).ToString();
         }
 
         /// <summary>Reads what <see cref="Serialize"/> wrote; anything unreadable gives an empty progress rather than an error.</summary>
@@ -305,7 +323,13 @@ namespace SimCore
             string[] parts = halves[0].Split(',');
             for (int i = 0; i < parts.Length && i < progress._stars.Length; i++)
                 if (int.TryParse(parts[i], out int s)) progress._stars[i] = Math.Max(0, Math.Min(3, s));
-            if (halves.Length > 1 && int.TryParse(halves[1], out int credits)) progress.Credits = Math.Max(0, credits);
+            // "stars|earned" is the old form (one number); "stars|earned|spent|bought" the current one.
+            if (halves.Length > 1 && int.TryParse(halves[1], out int earned)) progress._earned = Math.Max(0, earned);
+            if (halves.Length > 3)
+            {
+                if (int.TryParse(halves[2], out int spent)) progress._spent = Math.Max(0, spent);
+                if (int.TryParse(halves[3], out int bought)) progress._bought = Math.Max(0, bought);
+            }
             return progress;
         }
     }

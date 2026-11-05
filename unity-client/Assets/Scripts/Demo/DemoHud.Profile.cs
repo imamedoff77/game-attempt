@@ -21,12 +21,14 @@ public sealed partial class DemoHud
         }
 
         PlayerStats s = _game.Stats;
+        AccountUser me = signedIn ? _game.Account.User : null;
         string[] left =
         {
             Strings.Get("profile.stars", _game.Progress.TotalStars, Campaign.Missions.Count * 3),
             Strings.Get("profile.credits", _game.Progress.Credits),
             Strings.Get("profile.armory", armoryLevels, armoryMax),
             Strings.Get("profile.streak", _game.Daily.Streak),
+            me != null ? Strings.Get("profile.rating", me.rating > 0 ? me.rating : Rating.Start, me.ratedWins, me.ratedGames) : Strings.Get("profile.ratingNone"),
         };
         string[] right =
         {

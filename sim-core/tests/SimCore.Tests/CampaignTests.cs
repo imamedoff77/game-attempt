@@ -190,6 +190,19 @@ public class CampaignTests
     }
 
     [Fact]
+    public void OnlinePlay_OpensAfterTheThirdMissionIsWon()
+    {
+        var p = new CampaignProgress();
+        Assert.False(p.OnlineUnlocked);
+        p.Record(1, 1);
+        p.Record(2, 3);
+        Assert.False(p.OnlineUnlocked);
+        p.Record(Campaign.OnlineUnlockMission, 1);
+        Assert.True(p.OnlineUnlocked);
+        Assert.True(CampaignProgress.Parse(p.Serialize()).OnlineUnlocked); // survives saving
+    }
+
+    [Fact]
     public void Record_UnlocksTheNextMission_AndPaysEachStarOnce()
     {
         var p = new CampaignProgress();
@@ -233,6 +246,34 @@ public class CampaignTests
         Assert.Equal(p.Credits, q.Credits);
         Assert.True(q.IsUnlocked(3));
         Assert.Equal(3, q.NextMission);
+    }
+
+    [Fact]
+    public void Wallet_JoinsTwoPhonesWithoutLosingSpendingOrPurchases()
+    {
+        var phone = CampaignProgress.Parse("0,0,0,0,0,0,0,0,0,0|200|0|0"); // 200 earned
+        var tablet = CampaignProgress.Parse(phone.Serialize());
+        Assert.True(phone.Spend(150)); // spent in the armory on the phone
+        tablet.Add(30);                // earned meanwhile on the tablet
+        tablet.AddPurchased(500);      // and bought in the store
+
+        phone.MergeFrom(tablet);
+        tablet.MergeFrom(CampaignProgress.Parse(phone.Serialize()));
+        Assert.Equal(200 + 30 + 500 - 150, phone.Credits); // nothing lost, nothing counted twice
+        Assert.Equal(phone.Serialize(), tablet.Serialize());
+        phone.MergeFrom(tablet);
+        Assert.Equal(580, phone.Credits); // joining again changes nothing
+    }
+
+    [Fact]
+    public void OldSingleNumberWallet_StillLoads()
+    {
+        var p = CampaignProgress.Parse("3,1,0,0,0,0,0,0,0,0|120");
+        Assert.Equal(120, p.Credits);
+        Assert.Equal(3, p.Stars(1));
+        Assert.True(p.Spend(20));
+        Assert.Equal(100, p.Credits);
+        Assert.Equal(100, CampaignProgress.Parse(p.Serialize()).Credits);
     }
 
     [Theory]

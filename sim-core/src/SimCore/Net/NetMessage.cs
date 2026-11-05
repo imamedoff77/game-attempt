@@ -199,6 +199,110 @@ namespace SimCore
         }
     }
 
+    /// <summary>Client to server: "find me an opponent of about my strength" (ranked). Same fields as <see cref="CreateRoom"/>; the server answers <see cref="Queued"/> and later <see cref="MatchStart"/>.</summary>
+    public sealed class QuickMatch : NetMessage
+    {
+        public int ProtocolVersion { get; }
+        public ulong DataHash { get; }
+        public byte[] Kit { get; }
+        public string AuthToken { get; }
+
+        public QuickMatch(int protocolVersion, ulong dataHash, byte[] kit = null, string authToken = "")
+        {
+            ProtocolVersion = protocolVersion; DataHash = dataHash; Kit = kit ?? new byte[0]; AuthToken = authToken ?? "";
+        }
+    }
+
+    /// <summary>Server to a player who asked for a quick match: you are in the line. <see cref="Rating"/> is the rating the search uses.</summary>
+    public sealed class Queued : NetMessage
+    {
+        public int Rating { get; }
+
+        public Queued(int rating)
+        {
+            Rating = rating;
+        }
+    }
+
+    /// <summary>Client to server: stop searching (the connection is closed afterwards).</summary>
+    public sealed class LeaveQueue : NetMessage
+    {
+    }
+
+    /// <summary>
+    /// Server to both players right after <see cref="MatchStart"/> of a quick match: it is ranked, and these are the two players' ratings (index = team).
+    /// Friend rooms never get one (they are unranked).
+    /// </summary>
+    public sealed class MatchInfo : NetMessage
+    {
+        public int[] Ratings { get; }
+
+        public MatchInfo(int[] ratings)
+        {
+            Ratings = ratings ?? new int[World.TeamCount];
+        }
+    }
+
+    /// <summary>
+    /// Client to server when the match has a winner by the rules (a base fell, or somebody surrendered): "team N won".
+    /// The server rates the match when both players say the same, or when only one is left to say it.
+    /// </summary>
+    public sealed class ReportResult : NetMessage
+    {
+        public int WinnerTeam { get; }
+
+        public ReportResult(int winnerTeam)
+        {
+            WinnerTeam = winnerTeam;
+        }
+    }
+
+    /// <summary>Server to a rated player when their match was counted: the rating before and after.</summary>
+    public sealed class RatingUpdate : NetMessage
+    {
+        public int OldRating { get; }
+        public int NewRating { get; }
+
+        public RatingUpdate(int oldRating, int newRating)
+        {
+            OldRating = oldRating; NewRating = newRating;
+        }
+    }
+
+    /// <summary>
+    /// Client to server: say one of the ready-made phrases (<see cref="ChatPresets"/>) to the opponent. There is no free text on purpose:
+    /// nothing to moderate, nothing to translate wrongly. The server limits how often a player may talk.
+    /// </summary>
+    public sealed class Chat : NetMessage
+    {
+        public int Preset { get; }
+
+        public Chat(int preset)
+        {
+            Preset = preset;
+        }
+    }
+
+    /// <summary>Server to a player: the opponent (<see cref="Team"/>) said phrase <see cref="Preset"/>.</summary>
+    public sealed class ChatFrom : NetMessage
+    {
+        public int Team { get; }
+        public int Preset { get; }
+
+        public ChatFrom(int team, int preset)
+        {
+            Team = team; Preset = preset;
+        }
+    }
+
+    /// <summary>The ready-made phrases; their texts are in the string table as <c>chat.N</c>.</summary>
+    public static class ChatPresets
+    {
+        public const int Count = 8;
+        /// <summary>The least time between two phrases of one player.</summary>
+        public const int MinSecondsBetween = 1;
+    }
+
     /// <summary>Server to the remaining player: the opponent is connected again.</summary>
     public sealed class PeerBack : NetMessage
     {

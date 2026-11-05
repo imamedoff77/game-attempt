@@ -23,6 +23,14 @@ public class MessageCodecTests
         new Rejoin(1, "AB12", 1, 0xFEEDFACECAFEBEEFUL),
         new MatchResume(1, 2, 99, 1500, 1503),
         new PeerBack(0),
+        new QuickMatch(4, 0x0123456789ABCDEFUL, new byte[] { 1, 2 }, "tok-q"),
+        new Queued(1234),
+        new LeaveQueue(),
+        new MatchInfo(new[] { 1000, 1210 }),
+        new ReportResult(1),
+        new RatingUpdate(1000, 1016),
+        new Chat(3),
+        new ChatFrom(1, 7),
     };
 
     [Fact]
@@ -100,6 +108,29 @@ public class MessageCodecTests
         Assert.True(MessageCodec.TryDecode(MessageCodec.Encode(new MatchResume(1, 2, 99, 1500, 1503)), out m));
         var resume = (MatchResume)m;
         Assert.Equal((1, 2, 99, 1500, 1503), (resume.Team, resume.InputDelayTurns, resume.Seed, resume.ReplayTurns, resume.NextSubmitTurn));
+    }
+
+    [Fact]
+    public void RankedMessages_KeepTheirFields_AndBadOnesAreRefused()
+    {
+        Assert.True(MessageCodec.TryDecode(MessageCodec.Encode(new QuickMatch(4, 9, new byte[] { 3 }, "abc")), out NetMessage m));
+        var quick = (QuickMatch)m;
+        Assert.Equal((4, 9UL, "abc"), (quick.ProtocolVersion, quick.DataHash, quick.AuthToken));
+        Assert.Equal(3, quick.Kit[0]);
+
+        Assert.True(MessageCodec.TryDecode(MessageCodec.Encode(new MatchInfo(new[] { 1000, -5 })), out m));
+        Assert.Equal(new[] { 1000, -5 }, ((MatchInfo)m).Ratings);
+        Assert.True(MessageCodec.TryDecode(MessageCodec.Encode(new RatingUpdate(980, 1002)), out m));
+        Assert.Equal((980, 1002), (((RatingUpdate)m).OldRating, ((RatingUpdate)m).NewRating));
+
+        Assert.False(MessageCodec.TryDecode(new byte[] { 21, ChatPresets.Count }, out _)); // a phrase that does not exist
+        Assert.False(MessageCodec.TryDecode(new byte[] { 22, 2, 0 }, out _)); // a team that does not exist
+        Assert.True(MessageCodec.TryDecode(new byte[] { 21, (byte)(ChatPresets.Count - 1) }, out m));
+        Assert.Equal(ChatPresets.Count - 1, ((Chat)m).Preset);
+        Assert.False(MessageCodec.TryDecode(new byte[] { 19, 2 }, out _)); // a winner that is not a team
+        Assert.False(MessageCodec.TryDecode(new byte[] { 19 }, out _));
+        Assert.False(MessageCodec.TryDecode(new byte[] { 16, 1, 0 }, out _)); // cut off
+        Assert.False(MessageCodec.TryDecode(new byte[] { 17, 0 }, out _)); // trailing byte
     }
 
     [Theory]

@@ -16,6 +16,7 @@ using UnityEngine.Rendering.Universal;
 ///   Unity -batchmode -nographics -quit -projectPath unity-client -executeMethod GameBuild.Prepare
 ///   Unity -batchmode -nographics -quit -projectPath unity-client -buildTarget Android -executeMethod GameBuild.BuildAndroid      (release: no debug tools)
 ///   Unity -batchmode -nographics -quit -projectPath unity-client -buildTarget Android -executeMethod GameBuild.BuildAndroidDev   (test build: with the debug panel)
+///   Unity -batchmode -nographics -quit -projectPath unity-client -buildTarget Android -executeMethod GameBuild.BuildAndroidBundle (release .aab for the Play Console)
 /// </summary>
 public static class GameBuild
 {
@@ -47,14 +48,19 @@ public static class GameBuild
 
     public static void BuildAndroidDev() => Build(development: true);
 
-    private static void Build(bool development)
+    /// <summary>The release build as an Android App Bundle (.aab), the only format Google Play accepts for new apps.</summary>
+    public static void BuildAndroidBundle() => Build(development: false, bundle: true);
+
+    private static void Build(bool development, bool bundle = false)
     {
         GameIdentity identity = Identity;
         string apkPath = development ? identity.DevApk : identity.ReleaseApk;
+        if (bundle) apkPath = Path.ChangeExtension(apkPath, ".aab");
         try
         {
             SetupRenderPipeline();
             ConfigureAndroid();
+            EditorUserBuildSettings.buildAppBundle = bundle;
             CreateScene();
 
             Directory.CreateDirectory(Path.GetDirectoryName(apkPath));

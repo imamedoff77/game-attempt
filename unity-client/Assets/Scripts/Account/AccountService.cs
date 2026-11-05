@@ -6,7 +6,7 @@ using UnityEngine.Networking;
 
 // ---- the JSON shapes of the account server (see server/ACCOUNTS.md); JsonUtility needs plain serializable classes ----
 
-[Serializable] public sealed class AccountUser { public long id; public string email; public string displayName; public bool emailVerified; public bool hasPassword; public bool hasGoogle; }
+[Serializable] public sealed class AccountUser { public long id; public string email; public string displayName; public bool emailVerified; public bool hasPassword; public bool hasGoogle; public int rating; public int ratedGames; public int ratedWins; }
 [Serializable] public sealed class ProfileDto { public string campaign; public string armory; public string daily; public string tutorial; public string stats; }
 [Serializable] public sealed class SessionBody { public string token; public AccountUser user; public bool created; }
 [Serializable] public sealed class ProfileBody { public long revision; public ProfileDto data; }
@@ -19,6 +19,11 @@ using UnityEngine.Networking;
 [Serializable] public sealed class ForgotRequest { public string email; }
 [Serializable] public sealed class ResetRequest { public string email; public string code; public string newPassword; }
 [Serializable] public sealed class DeleteRequest { public string password; }
+[Serializable] public sealed class PurchaseRequestBody { public string productId; public string purchaseToken; }
+[Serializable] public sealed class AckBody { public long[] ids; }
+[Serializable] public sealed class PendingGrant { public long id; public string productId; public int credits; }
+[Serializable] public sealed class BoosterInfo { public string kind; public string expiresAt; }
+[Serializable] public sealed class StoreStateBody { public bool alreadyProcessed; public PendingGrant[] pending; public BoosterInfo[] boosters; }
 [Serializable] public sealed class ProfilePut { public long baseRevision; public ProfileDto data; }
 
 /// <summary>The answer of one call: HTTP status (0 when the server could not be reached), body text and the error code the server gave.</summary>
@@ -56,7 +61,11 @@ public sealed class AccountService : MonoBehaviour
     /// <summary>Raised when the signed-in state or the user's details change.</summary>
     public event Action Changed;
 
-    private void Update() => global::GoogleSignIn.Pump();
+    private void Update()
+    {
+        global::GoogleSignIn.Pump();
+        Billing.Pump();
+    }
 
     private void Awake()
     {
@@ -151,6 +160,15 @@ public sealed class AccountService : MonoBehaviour
     public void PutProfile(long baseRevision, ProfileDto data, Action<ApiResult> done) =>
         Send("PUT", "/v1/profile", new ProfilePut { baseRevision = baseRevision, data = data }, done);
 
+    // ---- store (see server/ACCOUNTS.md and STORE_SETUP.md) ----
+
+    public void StoreState(Action<ApiResult> done) => Send("GET", "/v1/store/state", null, done);
+
+    public void StorePurchase(string productId, string purchaseToken, Action<ApiResult> done) =>
+        Send("POST", "/v1/store/purchase", new PurchaseRequestBody { productId = productId, purchaseToken = purchaseToken }, done);
+
+    public void StoreAck(long[] ids, Action<ApiResult> done) => Send("POST", "/v1/store/ack", new AckBody { ids = ids }, done);
+
     // ---- transport ----
 
     private void Send(string method, string path, object body, Action<ApiResult> done) => StartCoroutine(Run(method, path, body, done));
@@ -169,6 +187,11 @@ public sealed class AccountService : MonoBehaviour
             if (SignedIn) request.SetRequestHeader("Authorization", "Bearer " + Token);
             request.timeout = 15;
             yield return request.SendWebRequest();
+
+            // Every answer carries the server's clock; the game's daily rewards and boosters go by it (see GameClock).
+            string date = request.GetResponseHeader("Date");
+            if (!string.IsNullOrEmpty(date) && DateTime.TryParse(date, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal, out DateTime serverTime))
+                GameClock.Observe(serverTime);
 
             var result = new ApiResult { Status = request.result == UnityWebRequest.Result.ConnectionError ? 0 : request.responseCode, Body = request.downloadHandler.text ?? "" };
             if (!result.Ok && result.Status != 0)

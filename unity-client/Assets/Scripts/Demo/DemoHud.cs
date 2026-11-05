@@ -87,6 +87,7 @@ public sealed partial class DemoHud : MonoBehaviour
                 if (armed) { _surrenderArmedUntil = 0f; _game.Surrender(); }
                 else _surrenderArmedUntil = Time.unscaledTime + 3f;
             }
+            DrawChat(top[1]);
             if (GUI.Button(top[2], Strings.Get("online.leave"), _button)) LeaveToMenu(); // just drops the connection: the opponent waits, then wins when the grace time ends
         }
 
@@ -381,6 +382,15 @@ public sealed partial class DemoHud : MonoBehaviour
             Rect onlineCard = EndCardRect();
             GUI.Box(onlineCard, "");
             GUI.Label(new Rect(onlineCard.x, onlineCard.y, onlineCard.width, onlineCard.height * 0.5f), Strings.Get(won ? "outcome.victoryShort" : "outcome.defeatShort"), style);
+            OnlineSession ranked = _game.Online;
+            if (ranked != null && ranked.Ranked)
+            {
+                var note = new GUIStyle(_label) { alignment = TextAnchor.MiddleCenter, fontSize = Mathf.RoundToInt(Screen.height * 0.045f) };
+                string line = ranked.RatingChanged
+                    ? Strings.Get("end.rating", ranked.RatingBefore, ranked.RatingAfter, (ranked.RatingAfter >= ranked.RatingBefore ? "+" : "") + (ranked.RatingAfter - ranked.RatingBefore))
+                    : Strings.Get("end.ratingWait");
+                GUI.Label(new Rect(onlineCard.x, onlineCard.y + onlineCard.height * 0.5f, onlineCard.width, onlineCard.height * 0.15f), line, note);
+            }
             Rect menuButton = EndButtonRects(onlineCard)[0];
             menuButton.x = onlineCard.center.x - menuButton.width / 2f;
             if (GUI.Button(menuButton, Strings.Get("end.menu"), _button)) LeaveToMenu();
@@ -459,7 +469,7 @@ public sealed partial class DemoHud : MonoBehaviour
 
     private float _surrenderArmedUntil;
 
-    private enum MenuPage { Main, Difficulty, Campaign, Briefing, Armory, Daily, Account, Profile, Online }
+    private enum MenuPage { Main, Difficulty, Campaign, Briefing, Armory, Daily, Account, Profile, Online, Store }
     private MenuPage _page = MenuPage.Main;
     private int _briefingMission = 1;
 
@@ -487,6 +497,7 @@ public sealed partial class DemoHud : MonoBehaviour
         if (_page == MenuPage.Account) { DrawAccount(); return; }
         if (_page == MenuPage.Profile) { DrawProfile(); return; }
         if (_page == MenuPage.Online) { DrawOnlinePage(); return; }
+        if (_page == MenuPage.Store) { DrawStore(); return; }
 
         GUI.Label(new Rect(0f, Screen.height * 0.08f, Screen.width, Screen.height * 0.18f), Application.productName, title);
         if (_page == MenuPage.Main)
@@ -496,6 +507,8 @@ public sealed partial class DemoHud : MonoBehaviour
             if (GUI.Button(account, who, _button)) OpenAccountPage();
             var profile = new Rect(account.x, account.yMax + Screen.height * 0.015f, account.width, account.height);
             if (GUI.Button(profile, Strings.Get("profile.title"), _button)) _page = MenuPage.Profile;
+            var store = new Rect(account.x, profile.yMax + Screen.height * 0.015f, account.width, account.height);
+            if (GUI.Button(store, Strings.Get("store.title"), _button)) OpenStorePage();
         }
 
         Rect[] buttons = MenuColumn(_page == MenuPage.Main ? MainMenuButtons : 4);
@@ -622,6 +635,7 @@ public sealed partial class DemoHud : MonoBehaviour
             foreach (Rect r in MenuRects()) yield return r;
         if (_game.SelectedBuilding != null && !_game.Placing)
             foreach (Rect r in PanelRects(PanelButtonCount(_game.SelectedBuilding))) yield return r;
+        if (_chatOpen) yield return ChatPanelRect();
         if (_game.Paused) yield return PauseCardRect();
         if ((_game.IsOfflineMatch || _game.OnlineMatch) && _game.Outcome != DemoGame.GameOutcome.Playing) yield return EndCardRect();
     }

@@ -74,7 +74,7 @@ public sealed class TestServer : IAsyncDisposable
         Client = factory.CreateClient();
     }
 
-    public static async Task<TestServer> StartAsync(Action<Dictionary<string, string?>>? settings = null)
+    public static async Task<TestServer> StartAsync(Action<Dictionary<string, string?>>? settings = null, IPlayVerifier? play = null)
     {
         string schema = "t_" + Guid.NewGuid().ToString("N");
         await using (var admin = NpgsqlDataSource.Create(AdminConnection))
@@ -105,6 +105,11 @@ public sealed class TestServer : IAsyncDisposable
                 services.AddSingleton<IEmailSender>(mail);
                 services.RemoveAll<IGoogleVerifier>();
                 services.AddSingleton<IGoogleVerifier>(google);
+                if (play != null)
+                {
+                    services.RemoveAll<IPlayVerifier>();
+                    services.AddSingleton(play);
+                }
                 services.RemoveAll<TimeProvider>();
                 services.AddSingleton<TimeProvider>(clock);
             });

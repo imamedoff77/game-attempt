@@ -7,10 +7,7 @@ public class ProfileMergeTests
 
     private static ProfileData Make(int[] stars, int credits, int rifle, int tank, int claimDay, bool tutorial)
     {
-        var campaign = new CampaignProgress();
-        for (int i = 0; i < stars.Length; i++) if (stars[i] > 0) campaign.Record(i + 1, stars[i]);
-        campaign.Spend(campaign.Credits);
-        campaign.Add(credits);
+        CampaignProgress campaign = CampaignProgress.Parse(string.Join(",", stars) + "|" + credits); // exactly this many credits, whatever the stars paid
         var armory = new Armory();
         var rich = new CampaignProgress();
         for (int i = 1; i <= 10; i++) rich.Record(i, 3);

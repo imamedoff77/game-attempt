@@ -138,12 +138,6 @@ public class ServerTests : IDisposable
         Assert.Equal(host.World!.StateHash(), guest.World!.StateHash());
     }
 
-    private sealed class FakeAccounts : IAccountVerifier
-    {
-        public readonly Dictionary<string, VerifiedPlayer> Sessions = new();
-        public VerifiedPlayer? Verify(string token) => Sessions.TryGetValue(token, out VerifiedPlayer? p) ? p : null;
-    }
-
     private static byte[] Kit(params (UnitKind kind, int level)[] levels)
     {
         byte[] kit = new Armory().ToBytes();

@@ -20,6 +20,8 @@ Android üçün 3D low-poly real vaxt strategiyası. Hədəf: 1v1 online (determ
 | `GAME_PLAN.md` | Əsas oyunun fazaları (0–8), 1.0 minimumu |
 | `FAZA_0_PLAN.md` | Cari fazanın ətraflı planı |
 | `DEMO_PLAN.md` | Bitmiş demonun planı və qaydaları (D1–D5) |
+| `FAZA_5_PLAN.md`, `FAZA_6_PLAN.md`, `FAZA_8_PLAN.md` | Online/reytinq, mağaza, buraxılış siyahısı |
+| `STORE_SETUP.md`, `PRIVACY_POLICY.md`, `server/ACCOUNTS.md` | Alışların quraşdırılması, məxfilik siyasəti (qaralama), hesab serveri |
 | `PROJECT_NEEDS.md` | Lazım olan alətlər və quraşdırma |
 | `ORIGINALITY.md` | Orijinallıq qaydaları |
 | `game.json` | Oyunun adı və şirkət adı (yeganə mənbə) |

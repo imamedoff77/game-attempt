@@ -91,3 +91,11 @@ The relay (`server/GameServer`) can require accounts. Set the same secret on bot
 | game server | `GAME_ACCOUNT_KEY` | the same secret |
 
 With both set, players without a valid session cannot create or join rooms, and the Armory each brings is limited to what their account holds. With them unset the game server is open (guests allowed): development only. Never expose `/v1/internal/*` publicly: block it in the reverse proxy.
+
+## Ranked matches and ratings
+
+Every account has an Elo rating (`rating`, starts at 1000, never below 100), `ratedGames` and `ratedWins`; `GET /v1/me` returns them. `SimCore.Rating` holds the formula (K = 32 for the first 30 ranked matches, 20 afterwards).
+
+The game server tells the account server who won, with `POST /v1/internal/report-match` (header `X-Internal-Key`, body `{matchId, winnerId, loserId}`). The answer is `{alreadyRecorded, winnerOld, winnerNew, loserOld, loserNew}`; asking again with the same `matchId` changes nothing (the table `rated_matches` remembers it). 400 for a bad body, 404 if an account is gone. `verify-session` also returns `rating` and `ratedGames`, which the game server uses for matchmaking.
+
+How the game server decides who won (`MatchServer`, `Replay`): the players only *claim* a winner (`ReportResult(winnerTeam)`); the server then plays the recorded match again from the relay's turn log with the same deterministic simulation and `SimCore.MatchReferee` (surrender first, then a destroyed headquarters). A claim the replay does not back up is ignored (logged); if the replay names another winner than the claim, the replay wins; a draw is not rated. If a player leaves a ranked match for good (no reconnect within 60 s), the one who stayed wins by walkover, unless the replay shows the match had already been decided the other way. Friend rooms (created with a code) are never rated. The replay needs `gamedata.json` next to the game server binary (copied by the build); without it the server warns at start-up and falls back to trusting agreeing claims. Ranked players whose balance data hash differs from the server's are refused (`WrongData`).

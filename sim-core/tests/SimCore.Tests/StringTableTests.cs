@@ -57,7 +57,7 @@ public class StringTableTests
         string root = FindRepoRoot();
         var used = new HashSet<string>();
         foreach (string file in Directory.GetFiles(Path.Combine(root, "unity-client", "Assets", "Scripts"), "*.cs", SearchOption.AllDirectories))
-            foreach (Match m in Regex.Matches(File.ReadAllText(file), "Strings\\.Get\\(\\s*\"([^\"]+)\""))
+            foreach (Match m in Regex.Matches(File.ReadAllText(file), "Strings\\.Get\\(\\s*\"([^\"]+)\"(?!\\s*\\+)"))
                 used.Add(m.Groups[1].Value);
         foreach (Match m in Regex.Matches(File.ReadAllText(Path.Combine(root, "unity-client", "Assets", "Scripts", "Demo", "DemoHud.cs")), "Get\\(\\s*[\\w.]+\\s*\\?\\s*\"([^\"]+)\"\\s*:\\s*\"([^\"]+)\""))
         {
@@ -67,6 +67,19 @@ public class StringTableTests
 
         Assert.NotEmpty(used);
         foreach (string key in used) Assert.True(en.Has(key), "missing text: " + key);
+    }
+
+    [Fact]
+    public void English_HasTextForEveryChatPhraseAndStoreProduct()
+    {
+        // These keys are built in code ("chat." + number, "store.product." + id), so the scan above cannot see them.
+        StringTable en = English();
+        for (int i = 0; i < ChatPresets.Count; i++) Assert.True(en.Has("chat." + i), "chat." + i);
+        foreach (string id in new[] { "credits_500", "credits_1500", "credits_4000", "booster_credits_x2_7d" })
+        {
+            Assert.True(en.Has("store.product." + id), "store.product." + id);
+            Assert.True(en.Has("store.detail." + id), "store.detail." + id);
+        }
     }
 
     [Fact]

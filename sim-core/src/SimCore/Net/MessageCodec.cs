@@ -14,12 +14,13 @@ namespace SimCore
 
         private const byte TypeSubmit = 1, TypeBundle = 2, TypeHash = 3, TypeDesync = 4,
             TypeCreateRoom = 5, TypeJoinRoom = 6, TypeRoomCreated = 7, TypeMatchStart = 8, TypeReject = 9, TypePeerLeft = 10, TypePing = 11,
-            TypeRejoin = 12, TypeMatchResume = 13, TypePeerBack = 14;
+            TypeRejoin = 12, TypeMatchResume = 13, TypePeerBack = 14,
+            TypeQuickMatch = 15, TypeQueued = 16, TypeLeaveQueue = 17, TypeMatchInfo = 18, TypeReportResult = 19, TypeRatingUpdate = 20, TypeChat = 21, TypeChatFrom = 22;
 
         public const int MaxCodeLength = 8;
 
         /// <summary>Raised whenever the wire format changes; the server refuses clients with another number.</summary>
-        public const int ProtocolVersion = 3;
+        public const int ProtocolVersion = 5;
         public const int MaxAuthTokenLength = 128;
 
         public static byte[] Encode(NetMessage message)
@@ -106,6 +107,42 @@ namespace SimCore
                 case PeerBack pb:
                     w.WriteByte(TypePeerBack);
                     w.WriteByte((byte)pb.Team);
+                    break;
+                case QuickMatch q:
+                    w.WriteByte(TypeQuickMatch);
+                    w.WriteU16((ushort)q.ProtocolVersion);
+                    w.WriteI64((long)q.DataHash);
+                    WriteKit(w, q.Kit);
+                    WriteAuth(w, q.AuthToken);
+                    break;
+                case Queued qd:
+                    w.WriteByte(TypeQueued);
+                    w.WriteI32(qd.Rating);
+                    break;
+                case LeaveQueue _:
+                    w.WriteByte(TypeLeaveQueue);
+                    break;
+                case MatchInfo mi:
+                    w.WriteByte(TypeMatchInfo);
+                    for (int t = 0; t < World.TeamCount; t++) w.WriteI32(t < mi.Ratings.Length ? mi.Ratings[t] : 0);
+                    break;
+                case ReportResult rr:
+                    w.WriteByte(TypeReportResult);
+                    w.WriteByte((byte)rr.WinnerTeam);
+                    break;
+                case RatingUpdate ru:
+                    w.WriteByte(TypeRatingUpdate);
+                    w.WriteI32(ru.OldRating);
+                    w.WriteI32(ru.NewRating);
+                    break;
+                case Chat ch:
+                    w.WriteByte(TypeChat);
+                    w.WriteByte((byte)ch.Preset);
+                    break;
+                case ChatFrom cf:
+                    w.WriteByte(TypeChatFrom);
+                    w.WriteByte((byte)cf.Team);
+                    w.WriteByte((byte)cf.Preset);
                     break;
                 default:
                     throw new ArgumentException("unknown message type " + (message == null ? "null" : message.GetType().Name));
@@ -224,6 +261,55 @@ namespace SimCore
                     if (r.Remaining != 0) return false;
                     message = new Ping();
                     return true;
+                case TypeQuickMatch:
+                    {
+                        if (!r.TryReadU16(out ushort version) || !r.TryReadI64(out long hash)) return false;
+                        if (!TryReadKit(r, out byte[] kit) || !TryReadAuth(r, out string auth) || r.Remaining != 0) return false;
+                        message = new QuickMatch(version, (ulong)hash, kit, auth);
+                        return true;
+                    }
+                case TypeQueued:
+                    {
+                        if (!r.TryReadI32(out int rating) || r.Remaining != 0) return false;
+                        message = new Queued(rating);
+                        return true;
+                    }
+                case TypeLeaveQueue:
+                    if (r.Remaining != 0) return false;
+                    message = new LeaveQueue();
+                    return true;
+                case TypeMatchInfo:
+                    {
+                        var ratings = new int[World.TeamCount];
+                        for (int t = 0; t < ratings.Length; t++) if (!r.TryReadI32(out ratings[t])) return false;
+                        if (r.Remaining != 0) return false;
+                        message = new MatchInfo(ratings);
+                        return true;
+                    }
+                case TypeReportResult:
+                    {
+                        if (!r.TryReadByte(out byte winner) || winner >= World.TeamCount || r.Remaining != 0) return false;
+                        message = new ReportResult(winner);
+                        return true;
+                    }
+                case TypeChat:
+                    {
+                        if (!r.TryReadByte(out byte preset) || preset >= ChatPresets.Count || r.Remaining != 0) return false;
+                        message = new Chat(preset);
+                        return true;
+                    }
+                case TypeChatFrom:
+                    {
+                        if (!r.TryReadByte(out byte team) || team >= World.TeamCount || !r.TryReadByte(out byte preset) || preset >= ChatPresets.Count || r.Remaining != 0) return false;
+                        message = new ChatFrom(team, preset);
+                        return true;
+                    }
+                case TypeRatingUpdate:
+                    {
+                        if (!r.TryReadI32(out int oldRating) || !r.TryReadI32(out int newRating) || r.Remaining != 0) return false;
+                        message = new RatingUpdate(oldRating, newRating);
+                        return true;
+                    }
                 default:
                     return false;
             }

@@ -13,6 +13,7 @@ public sealed record ChangePasswordRequest(string? CurrentPassword, string? NewP
 public sealed record DeleteAccountRequest(string? Password);
 public sealed record UpdateMeRequest(string? DisplayName);
 public sealed record VerifySessionRequest(string? Token);
+public sealed record ReportMatchRequest(string? MatchId, long WinnerId, long LoserId);
 public sealed record ProfileUpdateRequest(long BaseRevision, JsonObject? Data);
 
 public static class Endpoints
@@ -21,9 +22,9 @@ public static class Endpoints
     private static readonly string[] ProfileKeys = { "campaign", "armory", "daily", "tutorial", "stats" };
     private const int MaxProfileValueLength = 512;
 
-    private static IResult Error(int status, string code, object? extra = null) => Results.Json(new { error = code, details = extra }, statusCode: status);
+    internal static IResult Error(int status, string code, object? extra = null) => Results.Json(new { error = code, details = extra }, statusCode: status);
 
-    private static object UserDto(User u) => new { id = u.Id, email = u.Email, displayName = u.DisplayName, emailVerified = u.EmailVerified, hasPassword = u.PasswordHash != null, hasGoogle = u.GoogleSub != null };
+    private static object UserDto(User u) => new { id = u.Id, email = u.Email, displayName = u.DisplayName, emailVerified = u.EmailVerified, hasPassword = u.PasswordHash != null, hasGoogle = u.GoogleSub != null, rating = u.Rating, ratedGames = u.RatedGames, ratedWins = u.RatedWins };
 
     public static string? NormalizeEmail(string? email)
     {
@@ -49,13 +50,23 @@ public static class Endpoints
         return cleaned.Length > MaxDisplayName ? cleaned[..MaxDisplayName] : cleaned;
     }
 
+    /// <summary>Null when the caller is the game server (right <c>X-Internal-Key</c>); otherwise the answer to send back.</summary>
+    private static IResult? InternalCheck(HttpContext http, AccountOptions options)
+    {
+        if (options.InternalKey.Length == 0) return Results.NotFound();
+        string given = http.Request.Headers["X-Internal-Key"].ToString();
+        return System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+            System.Text.Encoding.UTF8.GetBytes(given), System.Text.Encoding.UTF8.GetBytes(options.InternalKey))
+            ? null : Error(401, "unauthorized");
+    }
+
     private static string? BearerToken(HttpContext http)
     {
         string header = http.Request.Headers.Authorization.ToString();
         return header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ? header[7..].Trim() : null;
     }
 
-    private static async Task<User?> Authenticate(HttpContext http, AccountStore store, TimeProvider clock)
+    internal static async Task<User?> Authenticate(HttpContext http, AccountStore store, TimeProvider clock)
     {
         string? token = BearerToken(http);
         return string.IsNullOrEmpty(token) ? null : await store.FindSessionUser(Tokens.Hash(token), clock.GetUtcNow());
@@ -216,17 +227,25 @@ public static class Endpoints
         // For the game server only (see AccountOptions.InternalKey): "whose session is this token, and what is in the armory?"
         app.MapPost("/v1/internal/verify-session", async (VerifySessionRequest? req, HttpContext http, AccountStore store, AccountOptions options, TimeProvider clock) =>
         {
-            if (options.InternalKey.Length == 0) return Results.NotFound();
-            string given = http.Request.Headers["X-Internal-Key"].ToString();
-            if (!System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
-                    System.Text.Encoding.UTF8.GetBytes(given), System.Text.Encoding.UTF8.GetBytes(options.InternalKey)))
-                return Error(401, "unauthorized");
+            if (InternalCheck(http, options) is { } refused) return refused;
             if (string.IsNullOrEmpty(req?.Token)) return Error(400, "invalid_token");
             User? user = await store.FindSessionUser(Tokens.Hash(req.Token), clock.GetUtcNow());
             if (user == null) return Error(401, "unauthorized");
             (_, string json) = await store.GetProfile(user.Id);
             string armory = JsonNode.Parse(json)?["armory"]?.GetValue<string>() ?? "";
-            return Results.Ok(new { userId = user.Id, displayName = user.DisplayName, armory });
+            return Results.Ok(new { userId = user.Id, displayName = user.DisplayName, armory, rating = user.Rating, ratedGames = user.RatedGames });
+        });
+
+        // For the game server only: "this ranked match ended, here is who won". Counted once per match id.
+        app.MapPost("/v1/internal/report-match", async (ReportMatchRequest? req, HttpContext http, AccountStore store, AccountOptions options, TimeProvider clock) =>
+        {
+            if (InternalCheck(http, options) is { } refused) return refused;
+            if (string.IsNullOrEmpty(req?.MatchId) || req.MatchId.Length > 64 || req.WinnerId <= 0 || req.LoserId <= 0 || req.WinnerId == req.LoserId)
+                return Error(400, "invalid_match");
+            RatedResult? result = await store.RecordRatedMatch(req.MatchId, req.WinnerId, req.LoserId, clock.GetUtcNow());
+            return result == null
+                ? Error(404, "unknown_player")
+                : Results.Ok(new { alreadyRecorded = result.AlreadyRecorded, winnerOld = result.WinnerOld, winnerNew = result.WinnerNew, loserOld = result.LoserOld, loserNew = result.LoserNew });
         });
 
         var api = app.MapGroup("/v1");

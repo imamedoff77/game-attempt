@@ -40,5 +40,35 @@ public static class Schema
             data jsonb not null default '{}',
             updated_at timestamptz not null
         );
+        alter table users add column if not exists rating int not null default 1000;
+        alter table users add column if not exists rated_games int not null default 0;
+        alter table users add column if not exists rated_wins int not null default 0;
+        create table if not exists rated_matches (
+            match_id text primary key,
+            winner_id bigint not null,
+            loser_id bigint not null,
+            winner_old int not null,
+            winner_new int not null,
+            loser_old int not null,
+            loser_new int not null,
+            created_at timestamptz not null
+        );
+        create table if not exists purchases (
+            id bigserial primary key,
+            user_id bigint not null references users(id) on delete cascade,
+            product_id text not null,
+            token_hash bytea not null unique,
+            order_id text not null default '',
+            credits int not null default 0,
+            delivered boolean not null default false,
+            created_at timestamptz not null
+        );
+        create index if not exists purchases_user on purchases(user_id);
+        create table if not exists boosters (
+            user_id bigint not null references users(id) on delete cascade,
+            kind text not null,
+            expires_at timestamptz not null,
+            primary key (user_id, kind)
+        );
         """;
 }

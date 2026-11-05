@@ -106,7 +106,7 @@ public sealed partial class DemoGame : MonoBehaviour
     private int _ordersIssued;
     private const string TutorialKey = "tutorial.done";
     public const int TutorialLastStep = 3;
-    public static int Today => (int)(System.DateTime.Now.Date - new System.DateTime(1970, 1, 1)).TotalDays;
+    public static int Today => GameClock.Today;
     /// <summary>Credits the mission just finished paid out (0 when lost or nothing new was earned).</summary>
     public int MissionPaid { get; private set; }
     private bool _missionRecorded;
@@ -160,6 +160,7 @@ public sealed partial class DemoGame : MonoBehaviour
         LoadWorld(DemoScenario.Create(), StartCenter, 0); // frozen backdrop behind the main menu
         Touch = new TouchController(Cam, this);
         if (Account.SignedIn) SyncProfile();
+        InitStore();
     }
 
     // ---- matches ----
@@ -356,6 +357,8 @@ public sealed partial class DemoGame : MonoBehaviour
     public void HostOnline(string address) => StartOnline(OnlineSession.Host(address, Armory.ToBytes(), Account.Token ?? ""));
     public void JoinOnline(string address, string code) => StartOnline(OnlineSession.Join(address, code, Armory.ToBytes(), Account.Token ?? ""));
 
+    public void QuickMatchOnline(string address) => StartOnline(OnlineSession.Quick(address, Armory.ToBytes(), Account.Token ?? ""));
+
     private void StartOnline(OnlineSession session)
     {
         LeaveOnline();
@@ -365,8 +368,10 @@ public sealed partial class DemoGame : MonoBehaviour
     /// <summary>Closes the connection. A match in progress stays on screen frozen; use the debug panel to start something new.</summary>
     public void LeaveOnline()
     {
+        bool wasRanked = Online != null && Online.Ranked;
         Online?.Leave();
         Online = null;
+        if (wasRanked && Account.SignedIn) Account.RefreshMe(); // the new rating (the server counted the match even if we left before hearing it)
     }
 
     /// <summary>Builds the starting world of an online match (also after a reconnect: the server then replays everything played so far).</summary>
@@ -638,6 +643,8 @@ public sealed partial class DemoGame : MonoBehaviour
             _outcomeSoundPlayed = true;
             Sfx.Play(Outcome == GameOutcome.Victory ? "victory" : "defeat", 0.9f, 0f);
             RecordDaily();
+            // A ranked match: say who won (the server counts it when both players agree; a walkover is decided by the server alone).
+            if (OnlineMatch && Online != null && !Online.OpponentAbandoned) Online.ReportOutcome(Outcome == GameOutcome.Victory ? LocalTeam : OpponentTeam);
         }
 
         // Bullet tracers for the shots fired in the ticks just simulated.
@@ -713,6 +720,7 @@ public sealed partial class DemoGame : MonoBehaviour
         if (_missionRecorded) return;
         _missionRecorded = true;
         MissionPaid = Progress.Record(Mission.Mission.Number, Mission.Stars);
+        if (MissionPaid > 0 && DoubleCreditsActive) { Progress.Add(MissionPaid); MissionPaid *= 2; } // the double-credits booster
         SaveProgress();
     }
 

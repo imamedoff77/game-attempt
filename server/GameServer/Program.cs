@@ -13,7 +13,13 @@ string? accountKey = Environment.GetEnvironmentVariable("GAME_ACCOUNT_KEY");
 using HttpAccountVerifier? verifier = !string.IsNullOrWhiteSpace(accountUrl) && !string.IsNullOrWhiteSpace(accountKey) ? new HttpAccountVerifier(accountUrl, accountKey) : null;
 Console.WriteLine(verifier != null ? "Only signed-in players may play (accounts: " + accountUrl + ")." : "Open server: guests may play (no account check).");
 
-var server = new MatchServer(new ServerOptions { Port = port, LogFolder = logFolder, Accounts = verifier });
+// The balance data lets the server replay ranked matches to check who really won.
+string dataPath = Path.Combine(AppContext.BaseDirectory, "gamedata.json");
+bool canVerify = File.Exists(dataPath);
+if (canVerify) SimCore.Defs.Load(File.ReadAllText(dataPath));
+else Console.WriteLine("WARNING: gamedata.json not found next to the server: ranked results cannot be checked by replay.");
+
+var server = new MatchServer(new ServerOptions { Port = port, LogFolder = logFolder, Accounts = verifier, VerifyResults = canVerify });
 server.Start();
 Console.WriteLine($"Server listening on port {server.Port}. Press Ctrl+C to stop.");
 // Typed commands (only for testing by hand): "drop CODE TEAM" cuts a player's connection, as a bad network would.

@@ -45,6 +45,27 @@ public sealed class OnlineSession
     /// <summary>Why the session ended, or what is going on, in plain words (not translated: shown mostly in the developer panel).</summary>
     public string Status { get; private set; } = "Connecting...";
 
+    // ---- ranked quick match ----
+    /// <summary>True while waiting in the matchmaking line (a quick match was asked for and no opponent was found yet).</summary>
+    public bool Searching { get; private set; }
+    public double SearchSeconds => Searching ? Time.realtimeSinceStartupAsDouble - _searchStart : 0.0;
+    /// <summary>The rating the search started with (from the server).</summary>
+    public int QueueRating { get; private set; }
+    /// <summary>This match is ranked: its result changes the ratings.</summary>
+    public bool Ranked { get; private set; }
+    /// <summary>Both players' ratings at the start of a ranked match (index = team).</summary>
+    public int[] Ratings { get; private set; }
+    /// <summary>Set when the server counted the match: the rating before and after.</summary>
+    public bool RatingChanged { get; private set; }
+    public int RatingBefore { get; private set; }
+    public int RatingAfter { get; private set; }
+    private double _searchStart, _lingerUntil;
+    private bool _reported;
+
+    /// <summary>The opponent's last ready-made phrase (index into <see cref="ChatPresets"/>, -1 = none yet) and when it came.</summary>
+    public int LastChatPreset { get; private set; } = -1;
+    public double LastChatAt { get; private set; }
+
     public bool OpponentLeft { get; private set; }
     /// <summary>The opponent did not come back in time: the match is given up and this player wins.</summary>
     public bool OpponentAbandoned { get; private set; }
@@ -58,6 +79,30 @@ public sealed class OnlineSession
     public string NetStats { get; private set; } = "";
 
     public static OnlineSession Host(string address, byte[] kit, string authToken) => Begin(address, null, true, kit, authToken);
+
+    /// <summary>Asks the server for an opponent of about the same strength (ranked, no room code needed).</summary>
+    public static OnlineSession Quick(string address, byte[] kit, string authToken)
+    {
+        var session = new OnlineSession();
+        ParseAddress(address, out session._host, out session._port);
+        session._firstMessage = new QuickMatch(MessageCodec.ProtocolVersion, Defs.DataHash, kit, authToken);
+        session.StartAttempt();
+        return session;
+    }
+
+    public void SendChat(int preset)
+    {
+        if (_attempt != null && _attempt.Connected && State == Phase.Playing && !Reconnecting && preset >= 0 && preset < ChatPresets.Count)
+            _attempt.Conn.Send(new Chat(preset));
+    }
+
+    /// <summary>Tells the server who won (once). The server counts the match when both players say the same.</summary>
+    public void ReportOutcome(int winnerTeam)
+    {
+        if (!Ranked || _reported || _attempt == null || !_attempt.Connected) return;
+        _reported = true;
+        _attempt.Conn.Send(new ReportResult(winnerTeam));
+    }
 
     public static OnlineSession Join(string address, string code, byte[] kit, string authToken)
     {
@@ -131,8 +176,12 @@ public sealed class OnlineSession
     /// </summary>
     public NetMessage Pump()
     {
-        if (State == Phase.Ended) return null;
         double now = Time.realtimeSinceStartupAsDouble;
+        if (State == Phase.Ended)
+        {
+            PumpLinger(now);
+            return null;
+        }
 
         if (_attempt == null)
         {
@@ -163,7 +212,28 @@ public sealed class OnlineSession
                     State = Phase.Waiting;
                     Status = "Waiting for the opponent. Room code: " + created.Code;
                     break;
+                case Queued queued:
+                    Searching = true;
+                    _searchStart = now;
+                    QueueRating = queued.Rating;
+                    State = Phase.Waiting;
+                    Status = "Looking for an opponent...";
+                    break;
+                case ChatFrom said:
+                    LastChatPreset = said.Preset;
+                    LastChatAt = now;
+                    break;
+                case MatchInfo info:
+                    Ranked = true;
+                    Ratings = info.Ratings;
+                    break;
+                case RatingUpdate update:
+                    RatingChanged = true;
+                    RatingBefore = update.OldRating;
+                    RatingAfter = update.NewRating;
+                    break;
                 case MatchStart start:
+                    Searching = false;
                     Start = start;
                     _token = start.Token;
                     State = Phase.Playing;
@@ -179,6 +249,8 @@ public sealed class OnlineSession
                 case Reject reject when reject.Reason == RejectReason.OpponentGone:
                     OpponentAbandoned = true;
                     End("The opponent did not come back");
+                    if (Ranked) _lingerUntil = now + 8.0; // the server is counting the match: wait a moment for the new rating
+                    else _attempt?.Conn.Dispose();
                     return null;
                 case Reject reject:
                     End(Reconnecting ? "The match is over (" + reject.Reason + ")" : RefusalText(reject.Reason));
@@ -275,14 +347,37 @@ public sealed class OnlineSession
     {
         State = Phase.Ended;
         Reconnecting = false;
+        Searching = false;
         Status = status;
-        _attempt?.Conn.Dispose();
+        // Kept open when a ranked match was just given up, to hear the rating (see PumpLinger); every other ending drops the link.
+        if (!(OpponentAbandoned && Ranked)) _attempt?.Conn.Dispose();
+    }
+
+    /// <summary>After a walkover: stay connected for a few seconds only to receive the rating change.</summary>
+    private void PumpLinger(double now)
+    {
+        if (_lingerUntil <= 0.0 || _attempt == null) return;
+        while (_attempt.Conn.TryReceive(out NetMessage message))
+        {
+            if (message is RatingUpdate update)
+            {
+                RatingChanged = true;
+                RatingBefore = update.OldRating;
+                RatingAfter = update.NewRating;
+                _lingerUntil = 0.0;
+            }
+        }
+        if (_lingerUntil > 0.0 && now < _lingerUntil && !_attempt.Conn.Closed) return;
+        _lingerUntil = 0.0;
+        _attempt.Conn.Dispose();
     }
 
     public void Leave()
     {
         State = Phase.Ended;
         Reconnecting = false;
+        Searching = false;
+        _lingerUntil = 0.0;
         _attempt?.Conn.Dispose();
     }
 }
