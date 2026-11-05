@@ -18,7 +18,7 @@ namespace SimCore
         /// <summary>Map coordinates beyond this are never valid (keeps later arithmetic far from overflow).</summary>
         private const int MaxCoordinate = 4096;
 
-        private const byte TypeMove = 1, TypeBuild = 2, TypeQueue = 3, TypeCancel = 4, TypeRally = 5, TypeAttack = 6;
+        private const byte TypeMove = 1, TypeBuild = 2, TypeQueue = 3, TypeCancel = 4, TypeRally = 5, TypeAttack = 6, TypeCancelBuild = 7, TypeUpgradeBase = 8, TypeResearch = 9;
 
         // ---------------------------------------------------------------- one command
 
@@ -113,6 +113,17 @@ namespace SimCore
                     w.WriteByte((byte)a.TargetKind);
                     w.WriteI32(a.TargetId);
                     break;
+                case CancelBuildCommand cb:
+                    w.WriteByte(TypeCancelBuild);
+                    w.WriteI32(cb.BuildingId);
+                    break;
+                case UpgradeBaseCommand _:
+                    w.WriteByte(TypeUpgradeBase);
+                    break;
+                case ResearchCommand rc:
+                    w.WriteByte(TypeResearch);
+                    w.WriteByte((byte)rc.Kind);
+                    break;
                 default:
                     throw new ArgumentException("unknown command type " + (command == null ? "null" : command.GetType().Name));
             }
@@ -170,6 +181,21 @@ namespace SimCore
                         if (!r.TryReadByte(out byte kind) || !IsDefined<AttackKind>(kind) || (AttackKind)kind == AttackKind.None) return false;
                         if (!r.TryReadI32(out int target)) return false;
                         command = new AttackCommand(ids, (AttackKind)kind, target);
+                        return true;
+                    }
+                case TypeCancelBuild:
+                    {
+                        if (!r.TryReadI32(out int id)) return false;
+                        command = new CancelBuildCommand(id);
+                        return true;
+                    }
+                case TypeUpgradeBase:
+                    command = new UpgradeBaseCommand();
+                    return true;
+                case TypeResearch:
+                    {
+                        if (!r.TryReadByte(out byte kind) || !IsDefined<UpgradeKind>(kind)) return false;
+                        command = new ResearchCommand((UpgradeKind)kind);
                         return true;
                     }
                 default:

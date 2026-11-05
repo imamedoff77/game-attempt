@@ -6,7 +6,7 @@ namespace SimCore
     /// The whole game state and its rules. Contains no rendering and no floating point,
     /// so every device computes exactly the same result from the same commands.
     /// </summary>
-    public sealed class World
+    public sealed partial class World
     {
         public const int TicksPerSecond = 20;
         public const int MaxQueue = 5;
@@ -67,6 +67,11 @@ namespace SimCore
         {
         }
 
+        // Numbers each team's units and buildings in the order they appear. Periodic work (target search, re-planning, tower fire)
+        // is staggered by this number instead of the global id, so the two sides of a mirrored match get the same timing.
+        private readonly int[] _unitsSpawned = new int[2];
+        private readonly int[] _buildingsPlaced = new int[2];
+
         public Unit SpawnUnit(UnitKind kind, Vec2 position)
         {
             return Spawn(kind, position, Defs.Unit(kind).Speed, TeamPlayer);
@@ -96,22 +101,34 @@ namespace SimCore
         {
             Fix64 step = Fix64.FromRaw(speedPerSecond.Raw / TicksPerSecond);
             var unit = new Unit(_nextUnitId++, kind, team, ClampToMap(position), step);
+            unit.MaxHp = unit.Hp = EffectiveMaxHp(team, kind);
+            unit.Phase = _unitsSpawned[team & 1]++;
             _units.Add(unit);
             _unitsById[unit.Id] = unit;
+            RecountPop(team);
             return unit;
         }
 
-        /// <summary>Places a building with its top-left corner on cell (x, y). Returns null if it does not fit there.</summary>
-        public Building PlaceBuilding(BuildingKind kind, int x, int y, int team = TeamPlayer)
+        /// <summary>
+        /// Places a building with its top-left corner on cell (x, y). Returns null if it does not fit there.
+        /// Scenarios place ready buildings; a building ordered by a player starts <paramref name="underConstruction"/>.
+        /// </summary>
+        public Building PlaceBuilding(BuildingKind kind, int x, int y, int team = TeamPlayer, bool underConstruction = false)
         {
             BuildingDef def = Defs.Building(kind);
             if (!Map.CanPlace(x, y, def.Width, def.Height)) return null;
 
             var building = new Building(_nextBuildingId++, kind, team, x, y, def.Width, def.Height, NextOutput(kind, team));
+            if (underConstruction && def.ConstructionSeconds > 0)
+            {
+                building.ConstructionTicks = def.ConstructionSeconds * TicksPerSecond;
+                building.Hp = System.Math.Max(1, building.MaxHp / 10);
+            }
             for (int cy = y; cy < y + def.Height; cy++)
                 for (int cx = x; cx < x + def.Width; cx++)
                     Map.SetBuilding(cx, cy, building.Id);
 
+            building.Phase = _buildingsPlaced[team & 1]++;
             _buildings.Add(building);
             UpdateEconomy(team);
             return building;
@@ -122,6 +139,7 @@ namespace SimCore
         {
             if (kind == BuildingKind.Hq) return BuildCheck.NotAllowed;
             BuildingDef def = Defs.Building(kind);
+            if (_players[team].BaseLevel < def.RequiredLevel) return BuildCheck.LevelTooLow;
             if (!Map.CanPlace(x, y, def.Width, def.Height)) return BuildCheck.BadGround;
             foreach (Unit u in _units)
             {
@@ -148,7 +166,7 @@ namespace SimCore
             int capacity = Economy.HqEnergy, used = 0;
             foreach (Building b in _buildings)
             {
-                if (b.Team != team) continue;
+                if (b.Team != team || b.UnderConstruction) continue; // a building under construction neither gives nor needs anything
                 if (b.Kind == BuildingKind.PowerPlant) capacity += b.Output;
                 used += Defs.Building(b.Kind).EnergyUse;
             }
@@ -160,7 +178,7 @@ namespace SimCore
             {
                 if (b.Team != team) continue;
                 // Demo rule: in a shortage every building that needs energy stops.
-                b.Powered = !p.EnergyShortage || Defs.Building(b.Kind).EnergyUse == 0;
+                b.Powered = b.UnderConstruction || !p.EnergyShortage || Defs.Building(b.Kind).EnergyUse == 0;
                 if (b.Kind == BuildingKind.SupplyCenter && b.Powered) income += b.Output;
             }
             p.IncomePerMinute = income;
@@ -170,6 +188,28 @@ namespace SimCore
         {
             foreach (Building b in _buildings) if (b.Id == id) return b;
             return null;
+        }
+
+        /// <summary>Adds (or removes, when negative) resources of a team outside the command flow: for scenarios and tests, never for a player's action.</summary>
+        public void GiveResources(int team, int amount) => _players[team].Resources += amount;
+
+        /// <summary>Scenario set-up: a team that starts at a higher base level (more buildings and units open to it, bigger unit limit).</summary>
+        public void SetBaseLevel(int team, int level) => _players[team].BaseLevel = level < 1 ? 1 : level > Economy.MaxBaseLevel ? Economy.MaxBaseLevel : level;
+
+        /// <summary>Scenario set-up: a building that starts weaker (or stronger) than the standard health, e.g. a damaged enemy outpost.</summary>
+        public void SetBuildingHealth(int buildingId, int hp)
+        {
+            Building b = GetBuilding(buildingId);
+            if (b == null) return;
+            b.MaxHp = hp;
+            b.Hp = hp;
+        }
+
+        /// <summary>Takes health off a unit outside of combat (scenarios and tests). A unit at 0 health is removed on the next step.</summary>
+        public void DamageUnit(int unitId, int amount)
+        {
+            Unit u = GetUnit(unitId);
+            if (u != null) u.Hp -= amount;
         }
 
         public Unit GetUnit(int id) => _unitsById.TryGetValue(id, out Unit u) ? u : null;
@@ -192,14 +232,19 @@ namespace SimCore
 
             ApplyPendingCommands();
 
+            Construct();
             ProduceUnits();
             Fight();
+            DefenceAndRepair();
+            ApplyIncomingDamage();
 
             foreach (Unit u in _units)
                 MoveUnit(u);
+            SeparateUnits();
 
             RemoveDestroyed();
             CollectIncome();
+            for (int t = 0; t < TeamCount; t++) RecountPop(t);
             Tick++;
         }
 
@@ -213,6 +258,12 @@ namespace SimCore
             {
                 h.Add(p.Resources);
                 h.Add(p.IncomeProgress);
+                h.Add(p.BaseLevel);
+                for (int k = 0; k < p.UpgradeTiers.Length; k++) h.Add(p.UpgradeTiers[k]);
+                h.Add((int)p.ResearchKind);
+                h.Add(p.ResearchTicksLeft);
+                h.Add(p.UpgradeTicksLeft);
+                for (int k = 0; k < p.KitBonusMilli.Length; k++) if (p.KitBonusMilli[k] != 0) { h.Add(k); h.Add(p.KitBonusMilli[k]); } // only when used, so plain matches keep their hash
             }
             h.Add(_nextUnitId);
             foreach (Building b in _buildings)
@@ -226,6 +277,9 @@ namespace SimCore
                 h.Add(b.Hp);
                 h.Add(b.Powered ? 1 : 0);
                 h.Add(b.Progress);
+                h.Add(b.BuildProgress);
+                h.Add(b.ConstructionTicks);
+                h.Add(b.Cooldown);
                 h.Add(b.Spawned);
                 h.Add(b.HasRally ? 1 : 0);
                 if (b.HasRally) h.Add(b.Rally);
@@ -241,9 +295,11 @@ namespace SimCore
                 h.Add(u.PathIndex);
                 h.Add(u.Team);
                 h.Add(u.Hp);
+                h.Add(u.MaxHp);
                 h.Add((int)u.AttackKind);
                 h.Add(u.AttackId);
                 h.Add(u.Cooldown);
+                if (u.KitCarry != 0) h.Add(u.KitCarry);
                 h.Add(u.Marching ? 1 : 0);
                 h.Add(u.Facing);
             }
@@ -251,7 +307,9 @@ namespace SimCore
         }
 
         /// <summary>Slot offsets for <paramref name="count"/> units, centred on (0,0), laid out in a grid.</summary>
-        public static Vec2[] FormationOffsets(int count)
+        public static Vec2[] FormationOffsets(int count) => FormationOffsets(count, FormationSpacing);
+
+        public static Vec2[] FormationOffsets(int count, Fix64 spacing)
         {
             var offsets = new Vec2[count];
             if (count == 0) return offsets;
@@ -265,8 +323,8 @@ namespace SimCore
                 int col = i % columns;
                 int row = i / columns;
                 // (2*col - (columns-1)) * spacing / 2 centres the grid on the target.
-                Fix64 x = FormationSpacing * Fix64.FromInt(col * 2 - (columns - 1)) * Fix64.Half;
-                Fix64 y = FormationSpacing * Fix64.FromInt(row * 2 - (rows - 1)) * Fix64.Half;
+                Fix64 x = spacing * Fix64.FromInt(col * 2 - (columns - 1)) * Fix64.Half;
+                Fix64 y = spacing * Fix64.FromInt(row * 2 - (rows - 1)) * Fix64.Half;
                 offsets[i] = new Vec2(x, y);
             }
             return offsets;
@@ -284,6 +342,9 @@ namespace SimCore
                     case QueueUnitCommand queue: ApplyQueue(queue); break;
                     case CancelQueuedCommand cancel: ApplyCancel(cancel); break;
                     case SetRallyCommand rally: ApplyRally(rally); break;
+                    case CancelBuildCommand cancelBuild: ApplyCancelBuild(cancelBuild); break;
+                    case UpgradeBaseCommand upgrade: ApplyUpgradeBase(upgrade); break;
+                    case ResearchCommand research: ApplyResearch(research); break;
                 }
             }
             _pending.Clear();
@@ -292,17 +353,21 @@ namespace SimCore
         private void ApplyMove(MoveCommand cmd)
         {
             var units = new List<Unit>(cmd.UnitIds.Length);
+            Fix64 spacing = FormationSpacing;
             foreach (int id in cmd.UnitIds)
             {
                 Unit u = GetUnit(id);
-                if (u != null) units.Add(u);
+                if (u == null || u.Team != cmd.Team) continue;
+                units.Add(u);
+                Fix64 wide = u.Radius * Fix64.FromInt(2) + FormationGap; // heavy units need roomier slots
+                if (wide > spacing) spacing = wide;
             }
+            if (units.Count == 0) return;
 
             Fix64 cap = SlowestStep(units, cmd.Team);
-            Vec2[] offsets = FormationOffsets(units.Count);
+            Vec2[] offsets = AssignSlots(units, FormationOffsets(units.Count, spacing), cmd.Target);
             for (int i = 0; i < units.Count; i++)
             {
-                if (units[i].Team != cmd.Team) continue;
                 ClearTarget(units[i]); // a move order cancels an attack order
                 units[i].SpeedCap = cap;
                 GoTo(units[i], ClampToMap(cmd.Target + offsets[i]));
@@ -351,7 +416,7 @@ namespace SimCore
             if (!ValidTeam(cmd.Team) || CheckBuild(cmd.Kind, cmd.X, cmd.Y, cmd.Team) != BuildCheck.Ok) return;
 
             _players[cmd.Team].Resources -= Defs.Building(cmd.Kind).Cost;
-            PlaceBuilding(cmd.Kind, cmd.X, cmd.Y, cmd.Team);
+            PlaceBuilding(cmd.Kind, cmd.X, cmd.Y, cmd.Team, underConstruction: true);
 
             // The new building may block routes that were planned before it existed.
             foreach (Unit u in _units)
@@ -361,9 +426,12 @@ namespace SimCore
         /// <summary>Why a unit can or cannot be queued at a building.</summary>
         public QueueCheck CheckQueue(Building b, UnitKind kind)
         {
-            if (b == null || Defs.Unit(kind).Producer != b.Kind) return QueueCheck.NotAllowed;
+            if (b == null || b.UnderConstruction || Defs.Unit(kind).Producer != b.Kind) return QueueCheck.NotAllowed;
             if (b.QueueList.Count >= MaxQueue) return QueueCheck.QueueFull;
-            if (_players[b.Team].Resources < Defs.Unit(kind).Cost) return QueueCheck.NotEnoughResources;
+            PlayerState p = _players[b.Team];
+            if (p.BaseLevel < Defs.Unit(kind).RequiredLevel) return QueueCheck.LevelTooLow;
+            if (p.PopUsed + Defs.Unit(kind).Pop > p.PopCap) return QueueCheck.PopCapReached;
+            if (p.Resources < Defs.Unit(kind).Cost) return QueueCheck.NotEnoughResources;
             return QueueCheck.Ok;
         }
 
@@ -373,6 +441,7 @@ namespace SimCore
             if (b == null || b.Team != cmd.Team || CheckQueue(b, cmd.Kind) != QueueCheck.Ok) return;
             _players[b.Team].Resources -= Defs.Unit(cmd.Kind).Cost;
             b.QueueList.Add(cmd.Kind);
+            RecountPop(b.Team);
         }
 
         private void ApplyCancel(CancelQueuedCommand cmd)
@@ -382,6 +451,152 @@ namespace SimCore
             _players[b.Team].Resources += Defs.Unit(b.QueueList[cmd.Index]).Cost;
             b.QueueList.RemoveAt(cmd.Index);
             if (cmd.Index == 0) b.Progress = 0;
+            RecountPop(b.Team);
+        }
+
+        private void ApplyCancelBuild(CancelBuildCommand cmd)
+        {
+            Building b = GetBuilding(cmd.BuildingId);
+            if (b == null || b.Team != cmd.Team || !b.UnderConstruction || b.Hp <= 0) return;
+            _players[b.Team].Resources += Defs.Building(b.Kind).Cost * Economy.CancelRefundPercent / 100;
+            b.Hp = 0; // removed (and its cells freed) at the end of this tick, like a destroyed building
+        }
+
+        /// <summary>Why the base can or cannot be raised to its next level now.</summary>
+        public UpgradeCheck CheckUpgradeBase(int team)
+        {
+            if (!ValidTeam(team) || !HasBuilding(BuildingKind.Hq, team)) return UpgradeCheck.NotAllowed;
+            PlayerState p = _players[team];
+            if (p.BaseLevel >= Economy.MaxBaseLevel) return UpgradeCheck.MaxLevel;
+            if (p.Upgrading) return UpgradeCheck.AlreadyUpgrading;
+            if (p.Resources < Economy.BaseUpgradeCost(p.BaseLevel)) return UpgradeCheck.NotEnoughResources;
+            return UpgradeCheck.Ok;
+        }
+
+        public ResearchCheck CheckResearch(int team, UpgradeKind kind)
+        {
+            if (!ValidTeam(team) || !HasBuilding(BuildingKind.Hq, team)) return ResearchCheck.NotAllowed;
+            PlayerState p = _players[team];
+            UpgradeDef def = Defs.Upgrade(kind);
+            int tier = p.UpgradeTiers[(int)kind];
+            if (tier >= def.Tiers) return ResearchCheck.MaxTier;
+            if (p.Researching) return ResearchCheck.AlreadyResearching;
+            if (p.BaseLevel < def.RequiredLevel[tier]) return ResearchCheck.LevelTooLow;
+            if (p.Resources < def.Cost[tier]) return ResearchCheck.NotEnoughResources;
+            return ResearchCheck.Ok;
+        }
+
+        private void ApplyResearch(ResearchCommand cmd)
+        {
+            if (CheckResearch(cmd.Team, cmd.Kind) != ResearchCheck.Ok) return;
+            PlayerState p = _players[cmd.Team];
+            int tier = p.UpgradeTiers[(int)cmd.Kind];
+            UpgradeDef def = Defs.Upgrade(cmd.Kind);
+            p.Resources -= def.Cost[tier];
+            p.ResearchKind = cmd.Kind;
+            p.ResearchTicksLeft = def.Seconds[tier] * TicksPerSecond;
+        }
+
+        /// <summary>Total bonus (thousandths) a team has for this kind of unit and stat.</summary>
+        public int UpgradeBonus(int team, UnitClass unitClass, UpgradeStat stat)
+        {
+            int bonus = 0;
+            PlayerState p = _players[team];
+            for (int k = 0; k < p.UpgradeTiers.Length; k++)
+            {
+                UpgradeDef def = Defs.Upgrade((UpgradeKind)k);
+                if (def.Class == unitClass && def.Stat == stat) bonus += def.BonusMilli * p.UpgradeTiers[k];
+            }
+            return bonus;
+        }
+
+        /// <summary>Health of a new unit of this kind for this team: the base value plus the finished health upgrades.</summary>
+        public int EffectiveMaxHp(int team, UnitKind kind) =>
+            Defs.Combat(kind).Hp * (1000 + UpgradeBonus(team, Defs.Unit(kind).Class, UpgradeStat.Health) + _players[team].KitBonusMilli[(int)kind]) / 1000;
+
+        /// <summary>Damage per shot of this kind of unit for this team.</summary>
+        public int EffectiveDamage(int team, UnitKind kind) =>
+            Defs.Combat(kind).Damage * (1000 + UpgradeBonus(team, Defs.Unit(kind).Class, UpgradeStat.Damage)) / 1000;
+
+        /// <summary>
+        /// Gives a team a permanent bonus (thousandths) to the damage and health of one kind of unit, e.g. from the player's armory (damage: see <see cref="Fire"/>).
+        /// Meant for the start of a match: units that already exist get the extra health too. Both sides of an online match must set the same values.
+        /// </summary>
+        public void SetKitBonus(int team, UnitKind kind, int bonusMilli)
+        {
+            if (!ValidTeam(team)) return;
+            _players[team].KitBonusMilli[(int)kind] = System.Math.Max(0, System.Math.Min(1000, bonusMilli));
+            foreach (Unit u in _units)
+            {
+                if (u.Team != team || u.Kind != kind || u.Hp <= 0) continue;
+                int max = EffectiveMaxHp(team, kind);
+                u.Hp += max - u.MaxHp;
+                u.MaxHp = max;
+            }
+        }
+
+        /// <summary>When a health tier finishes, units that are already alive get the extra health too.</summary>
+        private void ApplyHealthBonus(int team, UpgradeKind kind)
+        {
+            UpgradeDef def = Defs.Upgrade(kind);
+            if (def.Stat != UpgradeStat.Health) return;
+            foreach (Unit u in _units)
+            {
+                if (u.Team != team || Defs.Unit(u.Kind).Class != def.Class || u.Hp <= 0) continue;
+                int max = EffectiveMaxHp(team, u.Kind);
+                u.Hp += max - u.MaxHp;
+                u.MaxHp = max;
+            }
+        }
+
+        private void ApplyUpgradeBase(UpgradeBaseCommand cmd)
+        {
+            if (CheckUpgradeBase(cmd.Team) != UpgradeCheck.Ok) return;
+            PlayerState p = _players[cmd.Team];
+            p.Resources -= Economy.BaseUpgradeCost(p.BaseLevel);
+            p.UpgradeTicksLeft = Economy.BaseUpgradeSeconds(p.BaseLevel) * TicksPerSecond;
+        }
+
+        /// <summary>Advances construction of new buildings and base upgrades by one tick.</summary>
+        private void Construct()
+        {
+            foreach (Building b in _buildings)
+            {
+                if (!b.UnderConstruction || b.Hp <= 0) continue;
+                // Health grows with the work done: from a tenth to full over the construction time (whole numbers only).
+                int start = System.Math.Max(1, b.MaxHp / 10);
+                int remaining = b.MaxHp - start;
+                b.Hp += remaining * (b.BuildProgress + 1) / b.ConstructionTicks - remaining * b.BuildProgress / b.ConstructionTicks;
+                b.BuildProgress++;
+                if (!b.UnderConstruction) UpdateEconomy(b.Team); // now it needs energy and may give some
+            }
+            foreach (PlayerState p in _players)
+            {
+                if (p.UpgradeTicksLeft == 0) continue;
+                if (--p.UpgradeTicksLeft == 0) p.BaseLevel++;
+            }
+            for (int team = 0; team < TeamCount; team++)
+            {
+                PlayerState p = _players[team];
+                if (p.ResearchTicksLeft == 0) continue;
+                if (--p.ResearchTicksLeft == 0)
+                {
+                    p.UpgradeTiers[(int)p.ResearchKind]++;
+                    ApplyHealthBonus(team, p.ResearchKind);
+                }
+            }
+        }
+
+        /// <summary>Places taken by a team's living units and by the units waiting in its production queues.</summary>
+        private void RecountPop(int team)
+        {
+            int used = 0;
+            foreach (Unit u in _units)
+                if (u.Team == team && u.Hp > 0) used += Defs.Unit(u.Kind).Pop;
+            foreach (Building b in _buildings)
+                if (b.Team == team)
+                    foreach (UnitKind q in b.QueueList) used += Defs.Unit(q).Pop;
+            _players[team].PopUsed = used;
         }
 
         private void ApplyRally(SetRallyCommand cmd)
@@ -397,7 +612,7 @@ namespace SimCore
         {
             foreach (Building b in _buildings)
             {
-                if (b.QueueList.Count == 0 || !b.Powered) continue;
+                if (b.QueueList.Count == 0 || !b.Powered || b.UnderConstruction) continue;
 
                 UnitKind kind = b.QueueList[0];
                 if (b.Progress < Defs.Unit(kind).BuildSeconds * TicksPerSecond)
@@ -406,12 +621,15 @@ namespace SimCore
                     continue;
                 }
 
-                // Door is on the low-y side, middle of the footprint.
-                var door = Pathfinder.NearestWalkable(Map, b.X + b.Width / 2, b.Y - 1);
+                // Door is on the side facing the middle of the map: the low-y side for team 0, and the half-turn image of that for team 1.
+                var door = b.Team == 0
+                    ? Pathfinder.NearestWalkable(Map, b.X + b.Width / 2, b.Y - 1)
+                    : Pathfinder.NearestWalkable(Map, b.X + (b.Width - 1) / 2, b.Y + b.Height, mirrored: true);
                 if (door == null) continue; // nowhere to stand: wait
 
                 // Spread new units a little so they do not all sit on one point.
                 Fix64 offset = Fix64.FromFraction((b.Spawned % 4) * 3 - 4, 10);
+                if (b.Team == 1) offset = -offset; // half-turn image of team 0's spread
                 var pos = new Vec2(Fix64.FromInt(door.Value.x) + Fix64.Half + offset, Fix64.FromInt(door.Value.y) + Fix64.Half);
                 b.Spawned++;
                 b.QueueList.RemoveAt(0);
@@ -482,6 +700,16 @@ namespace SimCore
             return (nearest - p).SqrLength;
         }
 
+        /// <summary>
+        /// Shots fired this tick land together once everybody has fired, so the order units happen to be stored in
+        /// never decides who gets the first strike (otherwise the side with the lower unit ids would always win mirrored fights).
+        /// </summary>
+        private void ApplyIncomingDamage()
+        {
+            foreach (Unit u in _units) { u.Hp -= u.Incoming; u.Incoming = 0; }
+            foreach (Building b in _buildings) { b.Hp -= b.Incoming; b.Incoming = 0; }
+        }
+
         private void Fight()
         {
             foreach (Unit u in _units)
@@ -490,6 +718,53 @@ namespace SimCore
                 if (u.Cooldown > 0) u.Cooldown--;
                 FightStep(u);
             }
+        }
+
+        /// <summary>Towers shoot the nearest enemy unit in range; repair stations heal friendly units nearby. Both need energy and must be finished.</summary>
+        private void DefenceAndRepair()
+        {
+            foreach (Building b in _buildings)
+            {
+                if (b.Hp <= 0 || b.UnderConstruction || !b.Powered) continue;
+                BuildingDef def = Defs.Building(b.Kind);
+                if (def.Damage == 0 && def.RepairPerSecond == 0) continue;
+
+                var centre = new Vec2(Fix64.FromInt(b.X) + Fix64.FromInt(b.Width) * Fix64.Half, Fix64.FromInt(b.Y) + Fix64.FromInt(b.Height) * Fix64.Half);
+
+                if (def.Damage > 0)
+                {
+                    if (b.Cooldown > 0) { b.Cooldown--; }
+                    else if ((Tick + b.Phase) % 3 == 0) TowerFire(b, def, centre);
+                }
+
+                if (def.RepairPerSecond > 0 && (Tick + b.Phase) % TicksPerSecond == 0)
+                {
+                    Fix64 r2 = def.RepairRadius * def.RepairRadius;
+                    foreach (Unit u in _units)
+                    {
+                        if (u.Team != b.Team || u.Hp <= 0 || u.Hp >= u.MaxHp) continue;
+                        if ((u.Pos - centre).SqrLength <= r2) u.Hp = System.Math.Min(u.MaxHp, u.Hp + def.RepairPerSecond);
+                    }
+                }
+            }
+        }
+
+        private void TowerFire(Building b, BuildingDef def, Vec2 centre)
+        {
+            Fix64 best = def.Range * def.Range + Fix64.One;
+            Unit target = null;
+            foreach (Unit t in _units)
+            {
+                if (t.Team == b.Team || t.Hp <= 0) continue;
+                Fix64 d = (t.Pos - centre).SqrLength;
+                if (d <= def.Range * def.Range && d < best) { best = d; target = t; }
+            }
+            if (target == null) return;
+
+            b.Cooldown = def.CooldownTicks;
+            target.Incoming += def.Damage;
+            _shots.Add(new ShotEvent(centre, target.Pos, UnitKind.Rifleman, b.Team));
+            if (_shots.Count > 512) _shots.RemoveRange(0, 256);
         }
 
         private void FightStep(Unit u)
@@ -509,14 +784,14 @@ namespace SimCore
                 ClearTarget(u);
 
             // A unit hitting a building answers enemy units that come into its reach (they are the ones shooting back).
-            if (u.AttackKind == AttackKind.Building && (Tick + u.Id) % 5 == 0 && EnemyUnitInReach(u, def, enemyTeam))
+            if (u.AttackKind == AttackKind.Building && (Tick + u.Phase) % 5 == 0 && EnemyUnitInReach(u, def, enemyTeam))
             {
                 ClearTarget(u);
                 Stop(u); // stand and fight: the next step picks the nearest enemy unit
             }
 
             // Look for something to shoot: units that stand still (and computer guards, even on patrol) notice enemies.
-            if (u.AttackKind == AttackKind.None && (!u.Moving || u.Guard) && (Tick + u.Id) % 5 == 0)
+            if (u.AttackKind == AttackKind.None && (!u.Moving || u.Guard) && (Tick + u.Phase) % 5 == 0)
                 Acquire(u, def, enemyTeam);
 
             if (u.AttackKind == AttackKind.None)
@@ -552,7 +827,7 @@ namespace SimCore
                 if (u.Guard && (u.Pos - u.Home).SqrLength > GuardLeash * GuardLeash) tooFar = true;
                 if (tooFar) { ClearTarget(u); return; }
             }
-            if ((Tick + u.Id) % 10 == 0) GoTo(u, targetPos); // re-plan twice a second at most
+            if ((Tick + u.Phase) % 10 == 0) GoTo(u, targetPos); // re-plan twice a second at most
         }
 
         /// <summary>
@@ -569,7 +844,7 @@ namespace SimCore
                 if (!ReachablePoint(u, def, range2, out aim)) ClearTarget(u);
             }
 
-            if (u.AttackKind == AttackKind.None && (Tick + u.Id) % 3 == 0)
+            if (u.AttackKind == AttackKind.None && (Tick + u.Phase) % 3 == 0)
             {
                 // Nearest enemy unit in range and arc, else nearest building.
                 Fix64 best = range2 + Fix64.One;
@@ -688,9 +963,31 @@ namespace SimCore
             _shots.Add(new ShotEvent(u.Pos, aim, u.Kind, u.Team));
             if (_shots.Count > 512) _shots.RemoveRange(0, 256); // nobody is listening: keep it small
 
-            if (u.AttackKind == AttackKind.Unit) GetUnit(u.AttackId).Hp -= def.Damage;
-            else GetBuilding(u.AttackId).Hp -= def.Damage;
+            int damage = EffectiveDamage(u.Team, u.Kind);
+            if (u.AttackKind == AttackKind.Unit)
+            {
+                Unit target = GetUnit(u.AttackId);
+                int mult = Defs.Unit(target.Kind).Class == UnitClass.Vehicle ? def.VsVehicleMilli : def.VsInfantryMilli;
+                target.Incoming += WithKit(u, Scaled(damage, mult));
+            }
+            else GetBuilding(u.AttackId).Incoming += WithKit(u, Scaled(damage, def.VsBuildingMilli));
         }
+
+        /// <summary>
+        /// The armory's damage bonus on top of what a shot deals. A shot is only a few points (a rifleman against a building deals 1),
+        /// so the bonus is carried from shot to shot: after many shots it adds exactly the bonus fraction.
+        /// </summary>
+        private int WithKit(Unit u, int dealt)
+        {
+            int kit = _players[u.Team].KitBonusMilli[(int)u.Kind];
+            if (kit == 0 || dealt == 0) return dealt;
+            u.KitCarry += dealt * kit;
+            dealt += u.KitCarry / 1000;
+            u.KitCarry %= 1000;
+            return dealt;
+        }
+
+        private static int Scaled(int damage, int milli) => milli <= 0 ? 0 : System.Math.Max(1, damage * milli / 1000);
 
         /// <summary>Removes everything whose health ran out.</summary>
         private void RemoveDestroyed()
@@ -731,24 +1028,32 @@ namespace SimCore
             }
         }
 
+        /// <summary>The cell a coordinate lies in. On an exact cell edge the mirrored side picks the lower cell (the half-turn image of the upper one).</summary>
+        private static int CellOf(Fix64 v, bool mirrored) => System.Math.Max(0, (int)((mirrored ? v.Raw - 1 : v.Raw) >> Fix64.FractionBits));
+
         private static bool ValidTeam(int team) => team >= 0 && team < TeamCount;
 
         /// <summary>Plans a route for the unit. Blocked destinations are moved to the nearest free cell; unreachable ones are ignored.</summary>
         private void GoTo(Unit u, Vec2 target)
         {
-            int gx = target.X.ToInt(), gy = target.Y.ToInt();
-            var free = Pathfinder.NearestWalkable(Map, gx, gy);
+            bool mirrored = u.Team == 1;
+            // A point exactly on a cell edge belongs to the later cell for team 0 and to the earlier one for team 1, so both sides see mirror-image cells.
+            int gx = CellOf(target.X, mirrored), gy = CellOf(target.Y, mirrored);
+
+            // A blocked goal moves to the closest free cell (cheap). If that one cannot be reached either
+            // (a closed-off pocket), the path ends on the reachable cell closest to it: this searches the whole map, so it is the last resort.
+            var free = Pathfinder.NearestWalkable(Map, gx, gy, mirrored);
             if (free == null) { Stop(u); return; }
+            gx = free.Value.x;
+            gy = free.Value.y;
 
-            if (free.Value.x != gx || free.Value.y != gy)
-            {
-                gx = free.Value.x;
-                gy = free.Value.y;
-                target = new Vec2(Fix64.FromInt(gx) + Fix64.Half, Fix64.FromInt(gy) + Fix64.Half);
-            }
-
-            var cells = Pathfinder.FindPath(Map, u.Pos.X.ToInt(), u.Pos.Y.ToInt(), gx, gy);
+            int sx = CellOf(u.Pos.X, mirrored), sy = CellOf(u.Pos.Y, mirrored);
+            var cells = Pathfinder.FindPath(Map, sx, sy, gx, gy, false, mirrored) ?? Pathfinder.FindPath(Map, sx, sy, gx, gy, true, mirrored);
             if (cells == null) { Stop(u); return; }
+
+            var last = cells[cells.Count - 1];
+            if (last.x != CellOf(target.X, mirrored) || last.y != CellOf(target.Y, mirrored))
+                target = new Vec2(Fix64.FromInt(last.x) + Fix64.Half, Fix64.FromInt(last.y) + Fix64.Half);
 
             // Skip the start cell; walk through the other cells' centres and finish exactly on the target.
             var waypoints = new Vec2[cells.Count == 1 ? 1 : cells.Count - 1];
@@ -771,27 +1076,39 @@ namespace SimCore
             u.Moving = false;
         }
 
-        private static void MoveUnit(Unit u)
+        /// <summary>An intermediate waypoint counts as reached this close: units that are pushed around must not circle a point they cannot touch.</summary>
+        private static readonly Fix64 WaypointReach = Fix64.FromFraction(3, 4);
+
+        private void MoveUnit(Unit u)
         {
             if (!u.Moving) return;
 
             Vec2 waypoint = u.Path[u.PathIndex];
+            bool last = u.PathIndex == u.Path.Length - 1;
             Vec2 delta = waypoint - u.Pos;
             Fix64 step = u.StepPerTick;
             if (u.SpeedCap.Raw > 0 && u.SpeedCap < step) step = u.SpeedCap;
 
-            if (delta.SqrLength <= step * step)
+            Fix64 reach = last || WaypointReach < step ? step : WaypointReach;
+            if (delta.SqrLength <= reach * reach)
             {
-                u.Pos = waypoint;
-                u.PathIndex++;
-                if (u.PathIndex >= u.Path.Length) Stop(u);
+                if (last)
+                {
+                    u.Pos = waypoint;
+                    Stop(u);
+                }
+                else
+                {
+                    u.PathIndex++; // the next tick heads for the next waypoint
+                }
+                return;
             }
-            else
-            {
-                Vec2 dir = delta.Normalized();
-                u.Pos = u.Pos + dir * step;
-                u.Facing = dir;
-            }
+
+            Vec2 dir = delta.Normalized();
+            // The straight line to the waypoint can clip a rock corner when the unit was pushed off its path:
+            // slide along the wall, and re-plan if even that is blocked.
+            if (!TryShift(u, dir * step)) GoTo(u, u.Target);
+            u.Facing = dir;
         }
 
         private Vec2 ClampToMap(Vec2 p)

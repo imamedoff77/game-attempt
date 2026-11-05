@@ -31,8 +31,8 @@ public sealed class DebugPanel : MonoBehaviour
 
     // Art style test: what do real shadows, detailed models and a darker mood cost on this phone?
     private Light _sun;
-    private int _shadowMode;       // 0 off, 1 hard 1024, 2 hard 2048, 3 soft 2048
-    private bool _dusk;
+    private int _shadowMode = 1;   // 0 off, 1 hard 1024, 2 hard 2048, 3 soft 2048
+    private bool _dusk = true;
     private bool _uncapped;        // frame rate limit 60 -> 120: shows how much headroom is left
     private Color _dayAmbient, _dayLight, _dayBackground;
     private float _dayIntensity;
@@ -56,6 +56,9 @@ public sealed class DebugPanel : MonoBehaviour
             _dayLight = _sun.color; _dayIntensity = _sun.intensity; _dayRotation = _sun.transform.rotation;
             _dayAmbient = RenderSettings.ambientLight;
             _dayBackground = Camera.main != null ? Camera.main.backgroundColor : Color.gray;
+            // The shipped look (art/ART_BIBLE.md): hard shadows from the main light and a dusk mood. The debug buttons can still switch them.
+            SetShadows(1);
+            SetDusk(true);
         }
     }
 
@@ -109,6 +112,7 @@ public sealed class DebugPanel : MonoBehaviour
     private void OnGUI()
     {
         if (_game.World == null) return;
+        GUI.depth = -100; // in front of the game's own screens, so its buttons are never covered
         HandleSecretTap();
         if (!_visible) return;
         EnsureStyles();
@@ -135,6 +139,8 @@ public sealed class DebugPanel : MonoBehaviour
             _uncapped = !_uncapped;
             Application.targetFrameRate = _uncapped ? 120 : 60;
         }
+        if (_game.Mode == DemoGame.GameMode.Campaign && GUI.Button(r[7], "Win mission", _button)) _game.DebugWinMission();
+        if (GUI.Button(r[8], "+500 credits", _button)) _game.DebugAddCredits(500);
         if (GUI.Button(r[5], _dusk ? "Mood: DUSK (dark)" : "Mood: day", _button)) SetDusk(!_dusk);
 
         DrawOnline();
@@ -189,7 +195,7 @@ public sealed class DebugPanel : MonoBehaviour
         _sun.intensity = on ? 1.25f : _dayIntensity;
         _sun.transform.rotation = on ? Quaternion.Euler(34f, -55f, 0f) : _dayRotation;
         RenderSettings.ambientLight = on ? new Color(0.27f, 0.3f, 0.38f) : _dayAmbient;
-        if (Camera.main != null) Camera.main.backgroundColor = on ? new Color(0.2f, 0.18f, 0.16f) : _dayBackground;
+        if (Camera.main != null) Camera.main.backgroundColor = on ? new Color(0.42f, 0.35f, 0.26f) : _dayBackground;
     }
 
     private void HandleSecretTap()
@@ -232,7 +238,7 @@ public sealed class DebugPanel : MonoBehaviour
         float h = Screen.height * 0.1f;
         float w = Screen.width * 0.2f;
         float top = Screen.height * 0.30f;
-        var rects = new Rect[7];
+        var rects = new Rect[9];
         for (int i = 0; i < rects.Length; i++)
             rects[i] = new Rect(pad + (i / 3) * (w + pad * 0.5f), top + (i % 3) * (h + pad * 0.5f), w, h);
         return rects;
@@ -259,6 +265,7 @@ public sealed class DebugPanel : MonoBehaviour
 
     private void EnsureStyles()
     {
+        UiSkin.Apply();
         if (_label != null) return;
         int size = Mathf.RoundToInt(Screen.height * 0.032f);
         _label = new GUIStyle(GUI.skin.label) { fontSize = size };

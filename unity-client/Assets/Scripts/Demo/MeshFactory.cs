@@ -77,6 +77,29 @@ public static class MeshFactory
         return mesh;
     }
 
+    /// <summary>Filled disc in the x/y plane (faces the camera when turned like it), visible from both sides: for smoke, flashes and fire.</summary>
+    public static Mesh Disc(float radius, int segments = 12)
+    {
+        var verts = new Vector3[segments + 1];
+        var tris = new int[segments * 6];
+        verts[0] = Vector3.zero;
+        for (int i = 0; i < segments; i++)
+        {
+            float a = i * Mathf.PI * 2f / segments;
+            verts[i + 1] = new Vector3(Mathf.Cos(a) * radius, Mathf.Sin(a) * radius, 0f);
+        }
+        for (int i = 0; i < segments; i++)
+        {
+            int b = i + 1, c = (i + 1) % segments + 1, t = i * 6;
+            tris[t] = 0; tris[t + 1] = b; tris[t + 2] = c;
+            tris[t + 3] = 0; tris[t + 4] = c; tris[t + 5] = b;
+        }
+        var mesh = new Mesh { name = "Disc", vertices = verts, triangles = tris };
+        mesh.RecalculateNormals();
+        mesh.RecalculateBounds();
+        return mesh;
+    }
+
     public static GameObject Spawn(string name, Mesh mesh, Material material, Transform parent = null)
     {
         var go = new GameObject(name);

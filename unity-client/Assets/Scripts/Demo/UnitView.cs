@@ -11,11 +11,15 @@ public sealed class UnitView : MonoBehaviour
     private GameObject _selectionRing;
     private GameObject _fireArc;
     private Quaternion _facing = Quaternion.identity;
+    private Transform _body;
+    private bool _vehicle, _heavy;
+    private float _phase, _moveBlend, _recoil, _dustTimer;
+    private int _seenShot;
 
     public int UnitId => _unit.Id;
     public int Team => _unit.Team;
 
-    public static UnitView Create(Unit unit, GameObject model, Material palette, Material ringMaterial, Material arcMaterial)
+    public static UnitView Create(Unit unit, GameObject model, Material palette, Material ringMaterial, Material arcMaterial, Vector3 modelScale)
     {
         var root = new GameObject("Unit " + unit.Id + " " + unit.Kind);
         var view = root.AddComponent<UnitView>();
@@ -24,6 +28,11 @@ public sealed class UnitView : MonoBehaviour
         GameObject body = Instantiate(model, root.transform);
         body.transform.localPosition = Vector3.zero;
         body.transform.localRotation = Quaternion.identity;
+        view._body = body.transform;
+        view._vehicle = Defs.Unit(unit.Kind).Class == UnitClass.Vehicle;
+        view._heavy = unit.Kind == UnitKind.Tank;
+        view._seenShot = unit.LastShotTick;
+        body.transform.localScale = modelScale; // a kind drawn with another kind's model is resized to tell them apart
         foreach (Renderer r in body.GetComponentsInChildren<Renderer>()) r.sharedMaterial = palette;
 
         float outer = Defs.Unit(unit.Kind).Class == UnitClass.Infantry ? 0.55f
@@ -56,6 +65,50 @@ public sealed class UnitView : MonoBehaviour
 
         _selectionRing.SetActive(selected);
         _fireArc.SetActive(selected);
+        Animate(to - from);
+    }
+
+    /// <summary>Walking bob and sway, vehicle rocking and dust, and a kick back when the unit fires. The model moves, the unit does not.</summary>
+    private void Animate(Vector3 step)
+    {
+        float dt = Time.deltaTime;
+        bool moving = _unit.Moving && step.sqrMagnitude > 1e-8f;
+        _moveBlend = Mathf.MoveTowards(_moveBlend, moving ? 1f : 0f, dt * 6f);
+        if (_moveBlend > 0f) _phase += dt * (_vehicle ? 14f : 8f);
+
+        if (_unit.LastShotTick != _seenShot)
+        {
+            _seenShot = _unit.LastShotTick;
+            _recoil = 1f;
+        }
+        _recoil = Mathf.Max(0f, _recoil - dt * 9f);
+
+        float bob, pitch, roll;
+        if (_vehicle)
+        {
+            bob = Mathf.Sin(_phase) * 0.015f;
+            pitch = Mathf.Sin(_phase * 0.7f) * 0.8f;
+            roll = Mathf.Sin(_phase * 0.5f) * 0.6f;
+        }
+        else
+        {
+            bob = Mathf.Abs(Mathf.Sin(_phase)) * 0.07f;
+            pitch = 0f;
+            roll = Mathf.Sin(_phase) * 4f;
+        }
+        float kick = _recoil * (_heavy ? 0.16f : _vehicle ? 0.08f : 0.07f);
+        _body.localPosition = new Vector3(0f, bob * _moveBlend, -kick);
+        _body.localRotation = Quaternion.Euler(pitch * _moveBlend - _recoil * (_vehicle ? 0.8f : 3f), 0f, roll * _moveBlend);
+
+        if (_vehicle && moving)
+        {
+            _dustTimer -= dt;
+            if (_dustTimer <= 0f)
+            {
+                _dustTimer = 0.16f;
+                Fx.Dust(transform.position - transform.forward * 0.7f);
+            }
+        }
     }
 
     /// <summary>Sim (x, y) maps onto the Unity ground plane (x, z).</summary>

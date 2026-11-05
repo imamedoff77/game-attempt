@@ -55,7 +55,7 @@ public class TwoPlayerTests
         var (w, _, rxA, _, rxB) = NewMatch();
         w.Enqueue(new QueueUnitCommand(rxA.Id, UnitKind.Rifleman), A);
         w.Enqueue(new QueueUnitCommand(rxB.Id, UnitKind.Rifleman), B);
-        Run(w, 6);
+        Run(w, 8);
         Assert.Equal(2, w.Units.Count);
         Assert.Contains(w.Units, u => u.Team == A && u.Pos.Y.ToFloat() < 30f);
         Assert.Contains(w.Units, u => u.Team == B && u.Pos.Y.ToFloat() > 30f);
@@ -71,6 +71,7 @@ public class TwoPlayerTests
         Assert.Equal(B, built.Team);
         Assert.Equal(Economy.StartResources - 100, w.Player(B).Resources);
         Assert.Equal(Economy.StartResources, w.Player(A).Resources);
+        for (int i = 0; i < 13 * World.TicksPerSecond; i++) w.Step(); // construction takes 12 s
         Assert.Equal(Economy.HqEnergy + 120 + 80, w.Player(B).EnergyCapacity); // second power plant gives 80
         Assert.Equal(Economy.HqEnergy + 120, w.Player(A).EnergyCapacity);
     }

@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\..\src\SimCore\Resources\gamedata.json" Link="gamedata.json" CopyToOutputDirectory="PreserveNewest" />
+    <Compile Include="..\Shared\AiMatch.cs" Link="AiMatch.cs" />
+    <Compile Include="..\Shared\MissionBot.cs" Link="MissionBot.cs" />
+    <ProjectReference Include="..\..\src\SimCore\SimCore.csproj" />
+  </ItemGroup>
+
+</Project>

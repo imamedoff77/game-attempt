@@ -22,12 +22,13 @@ public class ProductionTests
         int before = w.Resources;
         w.Enqueue(new QueueUnitCommand(barracks.Id, UnitKind.Rifleman));
         w.Step();
-        Assert.Equal(before - 50, w.Resources);
+        Assert.Equal(before - Defs.Unit(UnitKind.Rifleman).Cost, w.Resources);
         Assert.Empty(w.Units);
 
-        Run(w, 3);
+        int seconds = Defs.Unit(UnitKind.Rifleman).BuildSeconds;
+        Run(w, seconds - 1);
         Assert.Empty(w.Units);
-        Run(w, 2); // 4 s of work done
+        Run(w, 2); // the work is done
         Assert.Single(w.Units);
         Assert.Equal(UnitKind.Rifleman, w.Units[0].Kind);
         Assert.Empty(barracks.Queue);
@@ -39,9 +40,9 @@ public class ProductionTests
         var (w, _, barracks, _) = NewBase();
         w.Enqueue(new QueueUnitCommand(barracks.Id, UnitKind.Rifleman));
         w.Enqueue(new QueueUnitCommand(barracks.Id, UnitKind.RocketTrooper));
-        Run(w, 5);
+        Run(w, Defs.Unit(UnitKind.Rifleman).BuildSeconds + 1);
         Assert.Single(w.Units);
-        Run(w, 6);
+        Run(w, Defs.Unit(UnitKind.RocketTrooper).BuildSeconds);
         Assert.Equal(2, w.Units.Count);
         Assert.Equal(UnitKind.RocketTrooper, w.Units[1].Kind);
     }
@@ -91,8 +92,9 @@ public class ProductionTests
         Assert.Equal(0, barracks.Progress);
 
         w.Enqueue(new BuildCommand(BuildingKind.PowerPlant, 20, 10));
-        Run(w, 5);
+        Run(w, 13); // the power plant takes 12 s to build
         Assert.True(barracks.Powered);
+        Run(w, Defs.Unit(UnitKind.Rifleman).BuildSeconds);  // then the rifleman needs its build time
         Assert.Single(w.Units);
     }
 
@@ -103,10 +105,10 @@ public class ProductionTests
         var rally = new Vec2(Fix64.FromInt(45), Fix64.FromInt(30));
         w.Enqueue(new SetRallyCommand(barracks.Id, rally));
         w.Enqueue(new QueueUnitCommand(barracks.Id, UnitKind.Rifleman));
-        Run(w, 5);
+        for (int i = 0; i < 10 * World.TicksPerSecond && w.Units.Count == 0; i++) w.Step();
 
         Unit u = w.Units[0];
-        Assert.True(u.Pos.Y.ToInt() < barracks.Y);      // door side
+        Assert.True(u.Pos.Y.ToInt() < barracks.Y);      // door side, the moment it appears
         Assert.True(u.Moving);
         Run(w, 15);
         Assert.False(u.Moving);

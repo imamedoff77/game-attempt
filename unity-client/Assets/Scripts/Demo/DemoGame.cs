@@ -56,8 +56,8 @@ public sealed class DemoGame : MonoBehaviour
     private BuildingKind _placingKind;
     private bool _overlayWasVisible;
 
-    /// <summary>Art style test: draw the detailed models (where one exists) instead of the simple ones.</summary>
-    public bool DetailedModels { get; private set; }
+    /// <summary>Draw the detailed models (the shipped look); the simple ones stay as a fallback for slow phones and tests.</summary>
+    public bool DetailedModels { get; private set; } = true;
 
     public World World { get; private set; }
     public RtsCamera Cam { get; private set; }
@@ -82,6 +82,35 @@ public sealed class DemoGame : MonoBehaviour
 
     public enum GameOutcome { Playing, Victory, Defeat }
 
+    /// <summary>What the screen is doing: the main menu, the old sandbox scenario (development builds), a match against the computer, or an online match.</summary>
+    public enum GameMode { Menu, Demo, Skirmish, Online, Campaign }
+
+    public GameMode Mode { get; private set; } = GameMode.Menu;
+    /// <summary>A match against the computer or a campaign mission: pausable, ends with a result card.</summary>
+    public bool IsOfflineMatch => Mode == GameMode.Skirmish || Mode == GameMode.Campaign;
+
+    /// <summary>The campaign mission being played (null otherwise) and what the player has finished so far.</summary>
+    public MissionRun Mission { get; private set; }
+    public CampaignProgress Progress { get; private set; }
+    /// <summary>The player's permanent unit upgrades, bought with campaign credits.</summary>
+    public Armory Armory { get; private set; }
+    private const string ArmoryKey = "armory.levels";
+    /// <summary>Credits the mission just finished paid out (0 when lost or nothing new was earned).</summary>
+    public int MissionPaid { get; private set; }
+    private bool _missionRecorded;
+    private const string ProgressKey = "campaign.progress";
+    public bool Paused { get; set; }
+    public AiDifficulty Difficulty { get; private set; } = AiDifficulty.Medium;
+    private AiPlayer _ai;
+    private readonly List<Command> _aiBuffer = new List<Command>();
+
+    /// <summary>Counters for the end-of-match screen (local player's units built and lost, enemy units destroyed).</summary>
+    public int UnitsBuilt { get; private set; }
+    public int UnitsLost { get; private set; }
+    public int EnemiesDestroyed { get; private set; }
+    private bool _countStats;
+    public float MatchSeconds => World == null ? 0f : World.Tick / (float)SimCore.World.TicksPerSecond;
+
     /// <summary>Victory when nothing of the enemy is left; defeat when the player's base is destroyed.</summary>
     public GameOutcome Outcome { get; private set; }
     public int EnemyCount => World == null ? 0 : World.CountAlive(OpponentTeam);
@@ -102,6 +131,7 @@ public sealed class DemoGame : MonoBehaviour
     private void Start()
     {
         Application.targetFrameRate = 60;
+        Screen.sleepTimeout = SleepTimeout.NeverSleep; // a match against the computer can go minutes without a touch
 
         bool ok = SimCoreSelfTest.Run(out string failure);
         SelfTestStatus = ok ? "SimCore: OK" : "SimCore FAIL: " + failure;
@@ -110,10 +140,119 @@ public sealed class DemoGame : MonoBehaviour
         _enemyPalette = MakeEnemyPalette();
         _arcMaterial = new Material(overlayMaterial) { color = new Color(0.4f, 0.85f, 1f, 0.22f) };
         Fx.Init(markerMaterial);
+        Sfx.Init(transform);
 
+        LoadProgress();
         Cam = Camera.main.GetComponent<RtsCamera>();
-        LoadWorld(DemoScenario.Create(), StartCenter, 0); // map, player base and squad, enemy base
+        LoadWorld(DemoScenario.Create(), StartCenter, 0); // frozen backdrop behind the main menu
         Touch = new TouchController(Cam, this);
+    }
+
+    // ---- matches ----
+
+    /// <summary>A match against the computer on the fair mirrored map. The player is team 0 (bottom-left).</summary>
+    public void StartSkirmish(AiDifficulty difficulty)
+    {
+        LeaveOnline();
+        OnlineMatch = false;
+        ulong seed = (ulong)System.DateTime.UtcNow.Ticks;
+        _countStats = false;
+        World skirmish = SkirmishScenario.Create(seed);
+        Armory.Apply(skirmish, 0);
+        LoadWorld(skirmish, new Vector2Int(8, 8), 0);
+        Difficulty = difficulty;
+        _ai = new AiPlayer(OpponentTeam, difficulty, seed);
+        Mode = GameMode.Skirmish;
+        BeginPlay();
+    }
+
+    /// <summary>The old sandbox (a squad against guards). Development builds only; also the place from which the debug panel starts online matches.</summary>
+    public void StartDemo()
+    {
+        LeaveOnline();
+        OnlineMatch = false;
+        _countStats = false;
+        LoadWorld(DemoScenario.Create(), StartCenter, 0);
+        _ai = null;
+        Mode = GameMode.Demo;
+        BeginPlay();
+    }
+
+    /// <summary>Starts a campaign mission. The player is team 0; the mission runs the opponent and the scripted waves.</summary>
+    public void StartMission(int number)
+    {
+        LeaveOnline();
+        OnlineMatch = false;
+        _countStats = false;
+        Mission = new MissionRun(SimCore.Campaign.Get(number), (ulong)System.DateTime.UtcNow.Ticks);
+        _missionRecorded = false;
+        MissionPaid = 0;
+        Armory.Apply(Mission.World, 0);
+        Building hq = null;
+        foreach (Building b in Mission.World.Buildings) if (b.Team == 0 && b.Kind == BuildingKind.Hq) hq = b;
+        LoadWorld(Mission.World, hq != null ? new Vector2Int(hq.X, hq.Y) : new Vector2Int(8, 8), 0);
+        _ai = null;
+        Mode = GameMode.Campaign;
+        BeginPlay();
+    }
+
+    private void LoadProgress()
+    {
+        string text = null;
+        try { text = PlayerPrefs.GetString(ProgressKey, ""); } catch (System.Exception) { }
+        Progress = CampaignProgress.Parse(text);
+        string levels = null;
+        try { levels = PlayerPrefs.GetString(ArmoryKey, ""); } catch (System.Exception) { }
+        Armory = Armory.Parse(levels);
+    }
+
+    private void SaveProgress()
+    {
+        try
+        {
+            PlayerPrefs.SetString(ProgressKey, Progress.Serialize());
+            PlayerPrefs.SetString(ArmoryKey, Armory.Serialize());
+            PlayerPrefs.Save();
+        }
+        catch (System.Exception) { }
+    }
+
+    /// <summary>Buys the next armory level of a unit kind with campaign credits.</summary>
+    public bool BuyArmoryLevel(UnitKind kind)
+    {
+        if (!Armory.Buy(kind, Progress)) return false;
+        SaveProgress();
+        Sfx.Play("place", 0.8f, 0f);
+        return true;
+    }
+
+    private void BeginPlay()
+    {
+        Sfx.SetMusicVolume(0.2f);
+        Paused = false;
+        SimSpeed = 1f;
+        _accumulator = 0f;
+        UnitsBuilt = UnitsLost = EnemiesDestroyed = 0;
+        _countStats = true;
+    }
+
+    public void ReturnToMenu()
+    {
+        LeaveOnline();
+        OnlineMatch = false;
+        _ai = null;
+        Mission = null;
+        Paused = false;
+        CancelPlacement();
+        ClearSelection();
+        Mode = GameMode.Menu;
+        Sfx.SetMusicVolume(0.28f);
+    }
+
+    public void Surrender()
+    {
+        if (IsOfflineMatch && Outcome == GameOutcome.Playing) Outcome = GameOutcome.Defeat;
+        Paused = false;
     }
 
     /// <summary>Shows a (new) world: terrain, views and camera. The old world, if any, is thrown away.</summary>
@@ -131,6 +270,7 @@ public sealed class DemoGame : MonoBehaviour
         LocalTeam = localTeam;
         _home = home;
         Outcome = GameOutcome.Playing;
+        _outcomeSoundPlayed = false;
 
         _terrain = new GameObject("Terrain").AddComponent<TerrainView>();
         _terrain.Build(World.Map, groundMaterial, overlayMaterial, rockModels, palmModel, cactusModel, bushModel, paletteMaterial, home, 8);
@@ -165,11 +305,13 @@ public sealed class DemoGame : MonoBehaviour
         foreach (Building b in world.Buildings)
             if (b.Kind == BuildingKind.Hq && b.Team == team) hq = new Vec2(Fix64.FromInt(b.X), Fix64.FromInt(b.Y));
         var home = new Vector2Int(hq.X.ToInt(), hq.Y.ToInt());
+        _countStats = false;
         LoadWorld(world, home, team);
         attach(world);
         OnlineMatch = true;
-        SimSpeed = 1f;
-        _accumulator = 0f;
+        Mode = GameMode.Online;
+        _ai = null;
+        BeginPlay();
     }
 
     /// <summary>Every command goes through here. Online it is sent to the server and played when both players have it.</summary>
@@ -202,6 +344,7 @@ public sealed class DemoGame : MonoBehaviour
             foreach (int id in _removeBuffer)
             {
                 Fx.Explosion(_buildingObjects[id].transform.position, 5f);
+                Sfx.PlayAt(_buildingObjects[id].transform.position, "explosion_big", 1f, 0.15f);
                 Destroy(_buildingObjects[id]);
                 _buildingObjects.Remove(id);
                 changed = true;
@@ -217,8 +360,12 @@ public sealed class DemoGame : MonoBehaviour
         {
             foreach (Unit unit in World.Units)
                 if (!_views.ContainsKey(unit.Id))
+                {
                     _views[unit.Id] = UnitView.Create(unit, UnitModel(unit.Kind),
-                        unit.Team != LocalTeam ? _enemyPalette : paletteMaterial, ringMaterial, _arcMaterial);
+                        unit.Team != LocalTeam ? _enemyPalette : paletteMaterial, ringMaterial, _arcMaterial,
+                        IsBorrowed(unit.Kind) ? BorrowedScale(unit.Kind) : Vector3.one);
+                    if (_countStats && unit.Team == LocalTeam) { UnitsBuilt++; Sfx.Play("ready", 0.5f, 0.03f, 0.3f); }
+                }
 
             _removeBuffer.Clear();
             foreach (int id in _views.Keys)
@@ -226,6 +373,8 @@ public sealed class DemoGame : MonoBehaviour
             foreach (int id in _removeBuffer)
             {
                 Fx.Explosion(_views[id].transform.position, 1.6f);
+                Sfx.PlayAt(_views[id].transform.position, "explosion_small", 0.6f, 0.06f);
+                if (_countStats) { if (_views[id].Team == LocalTeam) UnitsLost++; else EnemiesDestroyed++; }
                 Destroy(_views[id].gameObject);
                 _views.Remove(id);
                 _selected.Remove(id);
@@ -233,25 +382,50 @@ public sealed class DemoGame : MonoBehaviour
         }
     }
 
+    // Placeholder looks until the new kinds get their own models (art phase): they borrow a similar model.
+    private static UnitKind ModelKind(UnitKind kind) =>
+        kind == UnitKind.Sniper ? UnitKind.Rifleman : kind == UnitKind.ArmoredCar ? UnitKind.Jeep : kind;
+
+    private static BuildingKind ModelKind(BuildingKind kind) =>
+        kind == BuildingKind.RepairStation ? BuildingKind.SupplyCenter : kind == BuildingKind.Tower ? BuildingKind.PowerPlant : kind;
+
+    private static bool Has(GameObject[] models, int i) => models != null && i < models.Length && models[i] != null;
+
     private GameObject UnitModel(UnitKind kind)
     {
         int i = (int)kind;
-        if (DetailedModels && unitModelsHd != null && i < unitModelsHd.Length && unitModelsHd[i] != null) return unitModelsHd[i];
+        if (DetailedModels && Has(unitModelsHd, i)) return unitModelsHd[i];
+        if (!Has(unitModels, i)) i = (int)ModelKind(kind);
         return unitModels[i];
     }
+
+    /// <summary>True when the kind is drawn with another kind's model (no model of its own in the current style).</summary>
+    private bool IsBorrowed(UnitKind kind) =>
+        !(DetailedModels && Has(unitModelsHd, (int)kind)) && !Has(unitModels, (int)kind);
+
+    private bool IsBorrowed(BuildingKind kind) =>
+        !(DetailedModels && Has(buildingModelsHd, (int)kind)) && !Has(buildingModels, (int)kind);
 
     private GameObject BuildingModel(BuildingKind kind)
     {
         int i = (int)kind;
-        if (DetailedModels && buildingModelsHd != null && i < buildingModelsHd.Length && buildingModelsHd[i] != null) return buildingModelsHd[i];
+        if (DetailedModels && Has(buildingModelsHd, i)) return buildingModelsHd[i];
+        if (!Has(buildingModels, i)) i = (int)ModelKind(kind);
         return buildingModels[i];
     }
+
+    /// <summary>Size tweak for a model borrowed from another kind, so the two can be told apart.</summary>
+    private static Vector3 BorrowedScale(UnitKind kind) => kind == UnitKind.ArmoredCar ? new Vector3(1.2f, 1.2f, 1.2f) : Vector3.one;
+
+    private static Vector3 BorrowedScale(BuildingKind kind) => kind == BuildingKind.Tower ? new Vector3(0.8f, 1.8f, 0.8f) : Vector3.one;
 
     /// <summary>Switches between simple and detailed models: every unit and building view is rebuilt (no explosions, selection is cleared).</summary>
     public void SetDetailedModels(bool on)
     {
         if (DetailedModels == on) return;
         DetailedModels = on;
+        bool counting = _countStats;
+        _countStats = false; // rebuilding the views is not units being built
         foreach (UnitView v in _views.Values) Destroy(v.gameObject);
         _views.Clear();
         foreach (GameObject go in _buildingObjects.Values) Destroy(go);
@@ -259,16 +433,19 @@ public sealed class DemoGame : MonoBehaviour
         ClearSelection();
         SyncBuildingViews();
         SyncUnitViews();
+        _countStats = counting;
     }
 
     private GameObject SpawnBuildingView(Building b)
     {
         GameObject go = Instantiate(BuildingModel(b.Kind), transform);
         go.name = "Building " + b.Kind;
+        if (IsBorrowed(b.Kind)) go.transform.localScale = BorrowedScale(b.Kind);
         // The model is centred on its footprint.
         go.transform.position = new Vector3(b.X + b.Width / 2f, 0f, b.Y + b.Height / 2f);
         Material mat = b.Team != LocalTeam ? _enemyPalette : paletteMaterial;
         foreach (Renderer r in go.GetComponentsInChildren<Renderer>()) r.sharedMaterial = mat;
+        BuildingFx.Attach(go, b);
         return go;
     }
 
@@ -308,7 +485,8 @@ public sealed class DemoGame : MonoBehaviour
 
     private void Update()
     {
-        Touch.Update();
+        if (Mode == GameMode.Menu) return; // the world is only a backdrop
+        if (!Paused) Touch.Update();
 
         if (Online != null)
         {
@@ -326,9 +504,11 @@ public sealed class DemoGame : MonoBehaviour
             _accumulator = 0f;
         }
 
-        _accumulator += Mathf.Min(Time.unscaledDeltaTime, 0.1f) * (OnlineMatch ? 1f : SimSpeed);
+        // A match against the computer stands still while paused and once it is decided.
+        bool frozen = IsOfflineMatch && (Paused || Outcome != GameOutcome.Playing);
+        if (!frozen) _accumulator += Mathf.Min(Time.unscaledDeltaTime, 0.1f) * (OnlineMatch ? 1f : SimSpeed);
         int steps = 0;
-        while (!catchingUp && _accumulator >= TickSeconds && steps < 5)
+        while (!catchingUp && !frozen && _accumulator >= TickSeconds && steps < 5)
         {
             _stepTimer.Restart();
             if (OnlineMatch)
@@ -340,7 +520,20 @@ public sealed class DemoGame : MonoBehaviour
                     break;
                 }
             }
-            else World.Step();
+            else if (Mode == GameMode.Campaign)
+            {
+                Mission.Advance(); // the opponent, the waves and the objectives all move with the world
+            }
+            else
+            {
+                if (_ai != null)
+                {
+                    _aiBuffer.Clear();
+                    _ai.Update(World, _aiBuffer);
+                    foreach (Command c in _aiBuffer) World.Enqueue(c, _ai.Team);
+                }
+                World.Step();
+            }
             double ms = _stepTimer.Elapsed.TotalMilliseconds;
             _stepMsSum += ms;
             _stepCount++;
@@ -364,12 +557,23 @@ public sealed class DemoGame : MonoBehaviour
         UpdateGhost();
         UpdateSelectionMarkers();
         UpdateOutcome();
+        if (Outcome != GameOutcome.Playing && !_outcomeSoundPlayed && IsOfflineMatch)
+        {
+            _outcomeSoundPlayed = true;
+            Sfx.Play(Outcome == GameOutcome.Victory ? "victory" : "defeat", 0.9f, 0f);
+        }
 
         // Bullet tracers for the shots fired in the ticks just simulated.
         _shotBuffer.Clear();
         World.DrainShots(_shotBuffer);
         foreach (ShotEvent shot in _shotBuffer)
-            if (!catchingUp) Fx.Tracer(UnitView.ToUnity(shot.From), UnitView.ToUnity(shot.To), shot.Kind == UnitKind.RocketTrooper || shot.Kind == UnitKind.Tank, shot.Team != LocalTeam);
+        {
+            if (catchingUp) continue;
+            bool heavyShot = shot.Kind == UnitKind.RocketTrooper || shot.Kind == UnitKind.Tank;
+            Fx.MuzzleFlash(UnitView.ToUnity(shot.From), UnitView.ToUnity(shot.To), heavyShot);
+            PlayShotSound(shot);
+            Fx.Tracer(UnitView.ToUnity(shot.From), UnitView.ToUnity(shot.To), heavyShot, shot.Team != LocalTeam);
+        }
 
         float alpha = _accumulator / TickSeconds;
         foreach (UnitView view in _views.Values)
@@ -378,11 +582,55 @@ public sealed class DemoGame : MonoBehaviour
         }
     }
 
+    private static void PlayShotSound(ShotEvent shot)
+    {
+        Vector3 at = UnitView.ToUnity(shot.From);
+        switch (shot.Kind)
+        {
+            case UnitKind.Tank: Sfx.PlayAt(at, "cannon", 0.8f, 0.08f); break;
+            case UnitKind.RocketTrooper: Sfx.PlayAt(at, "rocket", 0.7f, 0.1f); break;
+            case UnitKind.Sniper: Sfx.PlayAt(at, "rifle", 0.9f, 0.1f); break;
+            default: Sfx.PlayAt(at, "rifle", 0.5f, 0.05f); break;
+        }
+    }
+
+    private bool _outcomeSoundPlayed;
+
     private void UpdateOutcome()
     {
         if (Outcome != GameOutcome.Playing) return;
+        if (Mode == GameMode.Campaign)
+        {
+            if (Mission.Status == MissionStatus.Running) return;
+            Outcome = Mission.Status == MissionStatus.Won ? GameOutcome.Victory : GameOutcome.Defeat;
+            RecordMission();
+            return;
+        }
         if (!World.HasBuilding(BuildingKind.Hq, LocalTeam)) Outcome = GameOutcome.Defeat;
-        else if (OnlineMatch ? !World.HasBuilding(BuildingKind.Hq, OpponentTeam) : EnemyCount == 0) Outcome = GameOutcome.Victory;
+        else if (OnlineMatch || Mode == GameMode.Skirmish ? !World.HasBuilding(BuildingKind.Hq, OpponentTeam) : EnemyCount == 0) Outcome = GameOutcome.Victory;
+    }
+
+    /// <summary>Development builds: destroys the enemy headquarters so the victory path can be tested without playing the whole mission.</summary>
+    /// <summary>Development builds: credits for testing the armory.</summary>
+    public void DebugAddCredits(int amount)
+    {
+        Progress.Add(amount);
+        SaveProgress();
+    }
+
+    public void DebugWinMission()
+    {
+        if (Mode != GameMode.Campaign || Outcome != GameOutcome.Playing) return;
+        foreach (Building b in World.Buildings)
+            if (b.Team == 1 && b.Kind == BuildingKind.Hq) World.SetBuildingHealth(b.Id, 0);
+    }
+
+    private void RecordMission()
+    {
+        if (_missionRecorded) return;
+        _missionRecorded = true;
+        MissionPaid = Progress.Record(Mission.Mission.Number, Mission.Stars);
+        SaveProgress();
     }
 
     // ---- player actions (called by TouchController and the HUD) ----
@@ -524,6 +772,16 @@ public sealed class DemoGame : MonoBehaviour
             Issue(new CancelQueuedCommand(_selectedBuilding.Id, _selectedBuilding.Queue.Count - 1));
     }
 
+    /// <summary>Stops building the selected building that is still under construction (part of the cost is refunded).</summary>
+    public void CancelConstruction()
+    {
+        if (_selectedBuilding != null && _selectedBuilding.UnderConstruction) Issue(new CancelBuildCommand(_selectedBuilding.Id));
+    }
+
+    public void UpgradeBase() => Issue(new UpgradeBaseCommand());
+
+    public void Research(UpgradeKind kind) => Issue(new ResearchCommand(kind));
+
     public void BeginSetRally() => SettingRally = _selectedBuilding != null;
 
     /// <summary>
@@ -582,7 +840,7 @@ public sealed class DemoGame : MonoBehaviour
         _placingKind = kind;
         _overlayWasVisible = _terrain.OverlayVisible;
         _terrain.SetOverlayVisible(true);
-        _ghost = new BuildGhost(kind, buildingModels[(int)kind], paletteMaterial, overlayMaterial);
+        _ghost = new BuildGhost(kind, BuildingModel(kind), paletteMaterial, overlayMaterial);
 
         // Start in the middle of the screen.
         if (!Cam.GroundPoint(new Vector2(Screen.width / 2f, Screen.height / 2f), out Vector3 centre))
@@ -594,6 +852,7 @@ public sealed class DemoGame : MonoBehaviour
     {
         if (!Placing || PlacingCheck != BuildCheck.Ok) return;
         Issue(new BuildCommand(_placingKind, PlacingCell.x, PlacingCell.y));
+        Sfx.Play("place", 0.8f, 0f);
         EndPlacement();
     }
 

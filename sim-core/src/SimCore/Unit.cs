@@ -28,8 +28,17 @@ namespace SimCore
         /// <summary>Distance covered per simulation tick.</summary>
         public Fix64 StepPerTick { get; }
 
+        /// <summary>Body radius; units keep at least the sum of two radii between their centres.</summary>
+        public Fix64 Radius { get; }
+
         public int Hp { get; internal set; }
-        public int MaxHp { get; }
+        /// <summary>Damage dealt this tick that has not been applied yet (see World.ApplyIncomingDamage). Always 0 between ticks.</summary>
+        internal int Incoming;
+        /// <summary>Thousandths of a damage point earned from the armory bonus and not yet dealt.</summary>
+        internal int KitCarry;
+        /// <summary>Counts the team's units (buildings) in creation order; staggers periodic work. Not part of the hash: it follows from the history.</summary>
+        internal int Phase;
+        public int MaxHp { get; internal set; }
 
         /// <summary>What it is shooting at (AttackKind.None = nothing).</summary>
         public AttackKind AttackKind { get; internal set; }
@@ -63,6 +72,7 @@ namespace SimCore
             Target = pos;
             Home = pos;
             StepPerTick = stepPerTick;
+            Radius = Defs.Unit(kind).Radius;
             MaxHp = Hp = Defs.Combat(kind).Hp;
         }
     }

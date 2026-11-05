@@ -7,11 +7,11 @@ public class GameDataTests
     [Fact]
     public void ShippedFile_HoldsTheDemoBalance()
     {
-        Assert.Equal(500, Economy.StartResources);
+        Assert.Equal(300, Economy.StartResources);
         Assert.Equal(20, Economy.HqEnergy);
-        Assert.Equal(20, Economy.HqIncomePerMinute);
+        Assert.Equal(100, Economy.HqIncomePerMinute);
         Assert.Equal(new[] { 120, 80, 60, 50, 40 }, Economy.PowerPlantOutput);
-        Assert.Equal(new[] { 60, 40, 30, 25, 20 }, Economy.SupplyCenterIncome);
+        Assert.Equal(new[] { 200, 140, 100, 80, 60 }, Economy.SupplyCenterIncome);
 
         Assert.Equal(Fix64.FromFraction(5, 2), Defs.Unit(UnitKind.RocketTrooper).Speed);
         Assert.Equal(300, Defs.Unit(UnitKind.Tank).Cost);
@@ -19,19 +19,19 @@ public class GameDataTests
         Assert.Equal(BuildingKind.VehicleFactory, Defs.Unit(UnitKind.Jeep).Producer);
 
         CombatDef tank = Defs.Combat(UnitKind.Tank);
-        Assert.Equal((400, 40, 30, 90), (tank.Hp, tank.Damage, tank.CooldownTicks, tank.ArcDegrees));
+        Assert.Equal((1200, 50, 30, 90), (tank.Hp, tank.Damage, tank.CooldownTicks, tank.ArcDegrees));
         Assert.Equal(Fix64.FromInt(8), tank.Range);
         Assert.Equal(Fix64.FromFraction(707, 1000), tank.CosHalfArc);
 
-        Assert.Equal(1500, Defs.BuildingHp(BuildingKind.Hq));
+        Assert.Equal(15000, Defs.BuildingHp(BuildingKind.Hq));
         Assert.Equal(50, Defs.Building(BuildingKind.VehicleFactory).EnergyUse);
     }
 
     [Fact]
     public void Produces_FollowsEachUnitsProducer_InFileOrder()
     {
-        Assert.Equal(new[] { UnitKind.Rifleman, UnitKind.RocketTrooper }, Defs.Produces(BuildingKind.Barracks));
-        Assert.Equal(new[] { UnitKind.Jeep, UnitKind.Tank }, Defs.Produces(BuildingKind.VehicleFactory));
+        Assert.Equal(new[] { UnitKind.Rifleman, UnitKind.RocketTrooper, UnitKind.Sniper }, Defs.Produces(BuildingKind.Barracks));
+        Assert.Equal(new[] { UnitKind.Jeep, UnitKind.Tank, UnitKind.ArmoredCar }, Defs.Produces(BuildingKind.VehicleFactory));
         Assert.Empty(Defs.Produces(BuildingKind.Hq));
     }
 
@@ -49,7 +49,7 @@ public class GameDataTests
     public void Hash_Changes_WhenOneNumberChanges()
     {
         string json = Shipped();
-        string changed = json.Replace("\"hp\": 400 }", "\"hp\": 401 }"); // power plant health
+        string changed = json.Replace("\"hp\": 1200 }", "\"hp\": 1201 }"); // power plant health
         Assert.NotEqual(json, changed);
         Assert.NotEqual(GameData.Parse(json).Hash, GameData.Parse(changed).Hash);
     }
@@ -60,14 +60,14 @@ public class GameDataTests
         string json = Shipped();
         try
         {
-            Defs.Load(json.Replace("\"startResources\": 500", "\"startResources\": 777"));
+            Defs.Load(json.Replace("\"startResources\": 300", "\"startResources\": 777"));
             Assert.Equal(777, new World(new MapGrid(8, 8)).Resources);
         }
         finally
         {
             Defs.Load(json);
         }
-        Assert.Equal(500, Economy.StartResources);
+        Assert.Equal(300, Economy.StartResources);
     }
 
     [Theory]
@@ -91,18 +91,39 @@ public class GameDataTests
     public void MissingUnit_IsRejected()
     {
         var lines = Shipped().Replace("\r\n", "\n").Split('\n').ToList();
-        int tank = lines.FindIndex(l => l.Contains("\"id\": \"Tank\""));
-        lines.RemoveAt(tank);
-        lines[tank - 1] = lines[tank - 1].TrimEnd(',', ' '); // the line before is now the last one in the list
+        int last = lines.FindIndex(l => l.Contains("\"id\": \"ArmoredCar\""));
+        lines.RemoveAt(last);
+        lines[last - 1] = lines[last - 1].TrimEnd(',', ' '); // the line before is now the last one in the list
         var ex = Assert.Throws<GameDataException>(() => GameData.Parse(string.Join("\n", lines)));
-        Assert.Contains("missing entry for Tank", ex.Message);
+        Assert.Contains("missing entry for ArmoredCar", ex.Message);
+    }
+
+    [Fact]
+    public void NewUnitsAndBuildings_NeedBaseLevel2()
+    {
+        Assert.Equal(1, Defs.Unit(UnitKind.Rifleman).RequiredLevel);
+        Assert.Equal(2, Defs.Unit(UnitKind.Sniper).RequiredLevel);
+        Assert.Equal(2, Defs.Unit(UnitKind.ArmoredCar).RequiredLevel);
+        Assert.Equal(1, Defs.Building(BuildingKind.Barracks).RequiredLevel);
+        Assert.Equal(2, Defs.Building(BuildingKind.Tower).RequiredLevel);
+        Assert.True(Defs.Building(BuildingKind.Tower).Damage > 0);
+        Assert.True(Defs.Building(BuildingKind.RepairStation).RepairPerSecond > 0);
+        Assert.Equal(0, Defs.Building(BuildingKind.Barracks).Damage);
+    }
+
+    [Fact]
+    public void ShootingBuilding_WithoutRange_IsRejected()
+    {
+        string json = Shipped().Replace("\"damage\": 12, \"range\": 9, \"cooldownTicks\": 12", "\"damage\": 12");
+        var ex = Assert.Throws<GameDataException>(() => GameData.Parse(json));
+        Assert.Contains("needs range", ex.Message);
     }
 
     [Fact]
     public void FailedLoad_KeepsThePreviousData()
     {
         Assert.Throws<GameDataException>(() => Defs.Load("{ nonsense"));
-        Assert.Equal(500, Economy.StartResources);
+        Assert.Equal(300, Economy.StartResources);
     }
 
     [Fact]

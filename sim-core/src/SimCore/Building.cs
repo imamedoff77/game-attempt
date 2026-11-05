@@ -10,7 +10,11 @@ namespace SimCore
         public int Team { get; }
 
         public int Hp { get; internal set; }
-        public int MaxHp { get; }
+        /// <summary>Damage dealt this tick that has not been applied yet (see World.ApplyIncomingDamage). Always 0 between ticks.</summary>
+        internal int Incoming;
+        /// <summary>Counts the team's units (buildings) in creation order; staggers periodic work. Not part of the hash: it follows from the history.</summary>
+        internal int Phase;
+        public int MaxHp { get; internal set; }
 
         /// <summary>Top-left cell of the footprint, and its size in cells.</summary>
         public int X { get; }
@@ -20,6 +24,14 @@ namespace SimCore
 
         /// <summary>Energy produced (power plant) or resources per minute produced (supply center), fixed when built.</summary>
         public int Output { get; }
+
+        /// <summary>Ticks of construction done so far; the building works once this reaches <see cref="ConstructionTicks"/>.</summary>
+        public int BuildProgress { get; internal set; }
+        /// <summary>Ticks until a defence building can shoot again.</summary>
+        internal int Cooldown;
+        public int ConstructionTicks { get; internal set; }
+        /// <summary>True while the building is still being built: it uses no energy, produces nothing and gives no income.</summary>
+        public bool UnderConstruction => BuildProgress < ConstructionTicks;
 
         /// <summary>False while the base lacks the energy to run this building.</summary>
         public bool Powered { get; internal set; } = true;

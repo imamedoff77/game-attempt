@@ -25,4 +25,12 @@ public static class Strings
     public static string UnitName(UnitKind kind) => Get("unit." + kind);
 
     public static string BuildingName(BuildingKind kind) => Get("building." + kind);
+
+    public static string UpgradeName(UpgradeKind kind) => Get("upgrade." + kind);
+
+    public static string DifficultyName(AiDifficulty difficulty) => Get("difficulty." + difficulty);
+
+    public static string MissionName(int number) => Get("mission." + number + ".name");
+
+    public static string MissionBrief(int number) => Get("mission." + number + ".brief");
 }

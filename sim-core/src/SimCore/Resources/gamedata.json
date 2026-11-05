@@ -2,25 +2,40 @@
   "version": 1,
 
   "economy": {
-    "startResources": 500,
+    "startResources": 300,
     "hqEnergy": 20,
-    "hqIncomePerMinute": 20,
+    "hqIncomePerMinute": 100,
     "powerPlantOutput": [120, 80, 60, 50, 40],
-    "supplyCenterIncome": [60, 40, 30, 25, 20]
+    "supplyCenterIncome": [200, 140, 100, 80, 60],
+    "popCap": [20, 40, 60],
+    "baseUpgradeCost": [400, 800],
+    "baseUpgradeSeconds": [40, 70],
+    "cancelRefundPercent": 50
   },
 
   "units": [
-    { "id": "Rifleman",      "class": "Infantry", "producer": "Barracks",       "speedMilli": 3000, "cost": 50,  "buildSeconds": 4,  "hp": 60,  "damage": 6,  "range": 5, "cooldownTicks": 10, "sight": 9,  "arcDegrees": 240, "cosHalfArcMilli": -500 },
-    { "id": "RocketTrooper", "class": "Infantry", "producer": "Barracks",       "speedMilli": 2500, "cost": 80,  "buildSeconds": 6,  "hp": 50,  "damage": 25, "range": 7, "cooldownTicks": 30, "sight": 9,  "arcDegrees": 140, "cosHalfArcMilli": 342 },
-    { "id": "Jeep",          "class": "Vehicle",  "producer": "VehicleFactory", "speedMilli": 6000, "cost": 150, "buildSeconds": 8,  "hp": 100, "damage": 8,  "range": 6, "cooldownTicks": 8,  "sight": 10, "arcDegrees": 180, "cosHalfArcMilli": 0 },
-    { "id": "Tank",          "class": "Vehicle",  "producer": "VehicleFactory", "speedMilli": 2000, "cost": 300, "buildSeconds": 15, "hp": 400, "damage": 40, "range": 8, "cooldownTicks": 30, "sight": 11, "arcDegrees": 90,  "cosHalfArcMilli": 707 }
+    { "id": "Rifleman",      "class": "Infantry", "radiusMilli": 300, "pop": 1, "producer": "Barracks",       "speedMilli": 3000, "cost": 50,  "buildSeconds": 7,  "hp": 120,  "damage": 6,  "range": 5, "cooldownTicks": 10, "sight": 9,  "arcDegrees": 240, "cosHalfArcMilli": -500, "vsVehicleMilli": 400, "vsBuildingMilli": 300 },
+    { "id": "RocketTrooper", "class": "Infantry", "radiusMilli": 300, "pop": 2, "producer": "Barracks",       "speedMilli": 2500, "cost": 80,  "buildSeconds": 9,  "hp": 100,  "damage": 25, "range": 7, "cooldownTicks": 30, "sight": 9,  "arcDegrees": 140, "cosHalfArcMilli": 342, "vsInfantryMilli": 500, "vsVehicleMilli": 2000 },
+    { "id": "Jeep",          "class": "Vehicle", "radiusMilli": 450, "pop": 2,  "producer": "VehicleFactory", "speedMilli": 6000, "cost": 150, "buildSeconds": 8,  "hp": 280, "damage": 10,  "range": 6, "cooldownTicks": 8,  "sight": 10, "arcDegrees": 180, "cosHalfArcMilli": 0, "vsInfantryMilli": 1300, "vsVehicleMilli": 400, "vsBuildingMilli": 400 },
+    { "id": "Tank",          "class": "Vehicle", "radiusMilli": 600, "pop": 4,  "producer": "VehicleFactory", "speedMilli": 2000, "cost": 300, "buildSeconds": 15, "hp": 1200, "damage": 50, "range": 8, "cooldownTicks": 30, "sight": 11, "arcDegrees": 90,  "cosHalfArcMilli": 707, "vsBuildingMilli": 1500 },
+    { "id": "Sniper",        "class": "Infantry", "radiusMilli": 300, "requiredLevel": 2, "pop": 2, "producer": "Barracks",       "speedMilli": 2500, "cost": 120, "buildSeconds": 8,  "hp": 80,  "damage": 45, "range": 11, "cooldownTicks": 50, "sight": 12, "arcDegrees": 60,  "cosHalfArcMilli": 866, "vsInfantryMilli": 1500, "vsVehicleMilli": 300, "vsBuildingMilli": 300 },
+    { "id": "ArmoredCar",    "class": "Vehicle", "radiusMilli": 520, "requiredLevel": 2, "pop": 3,  "producer": "VehicleFactory", "speedMilli": 4000, "cost": 220, "buildSeconds": 11, "hp": 600, "damage": 18, "range": 7, "cooldownTicks": 10, "sight": 10, "arcDegrees": 120, "cosHalfArcMilli": 500, "vsVehicleMilli": 800, "vsBuildingMilli": 700 }
   ],
 
   "buildings": [
-    { "id": "Hq",             "width": 4, "height": 4, "cost": 0,   "energyUse": 0,  "hp": 1500 },
-    { "id": "PowerPlant",     "width": 2, "height": 2, "cost": 100, "energyUse": 0,  "hp": 400 },
-    { "id": "SupplyCenter",   "width": 3, "height": 3, "cost": 150, "energyUse": 20, "hp": 600 },
-    { "id": "Barracks",       "width": 3, "height": 2, "cost": 200, "energyUse": 30, "hp": 700 },
-    { "id": "VehicleFactory", "width": 4, "height": 3, "cost": 300, "energyUse": 50, "hp": 900 }
+    { "id": "Hq",             "width": 4, "height": 4, "buildSeconds": 0, "cost": 0,   "energyUse": 0,  "hp": 15000 },
+    { "id": "PowerPlant",     "width": 2, "height": 2, "buildSeconds": 12, "cost": 100, "energyUse": 0,  "hp": 1200 },
+    { "id": "SupplyCenter",   "width": 3, "height": 3, "buildSeconds": 20, "cost": 150, "energyUse": 20, "hp": 1800 },
+    { "id": "Barracks",       "width": 3, "height": 2, "buildSeconds": 25, "cost": 200, "energyUse": 30, "hp": 2100 },
+    { "id": "VehicleFactory", "width": 4, "height": 3, "buildSeconds": 35, "cost": 300, "energyUse": 50, "hp": 2700 },
+    { "id": "RepairStation",  "width": 2, "height": 2, "buildSeconds": 20, "cost": 180, "energyUse": 25, "hp": 1500, "requiredLevel": 2, "repairPerSecond": 12, "repairRadius": 5 },
+    { "id": "Tower",          "width": 2, "height": 2, "buildSeconds": 25, "cost": 250, "energyUse": 20, "hp": 1800, "requiredLevel": 2, "damage": 12, "range": 9, "cooldownTicks": 12 }
+  ],
+
+  "upgrades": [
+    { "id": "InfantryDamage", "class": "Infantry", "stat": "Damage", "bonusMilli": 100, "cost": [150, 300, 500],  "seconds": [30, 45, 60], "requiredLevel": [1, 2, 3] },
+    { "id": "InfantryHealth", "class": "Infantry", "stat": "Health", "bonusMilli": 100, "cost": [150, 300, 500],  "seconds": [30, 45, 60], "requiredLevel": [1, 2, 3] },
+    { "id": "VehicleDamage",  "class": "Vehicle",  "stat": "Damage", "bonusMilli": 100, "cost": [250, 450, 700],  "seconds": [40, 60, 80], "requiredLevel": [1, 2, 3] },
+    { "id": "VehicleHealth",  "class": "Vehicle",  "stat": "Health", "bonusMilli": 100, "cost": [250, 450, 700],  "seconds": [40, 60, 80], "requiredLevel": [1, 2, 3] }
   ]
 }

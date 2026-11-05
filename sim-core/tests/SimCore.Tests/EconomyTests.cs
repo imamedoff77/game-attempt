@@ -20,17 +20,17 @@ public class EconomyTests
         Assert.Equal(Economy.StartResources, w.Resources);
         Assert.Equal(20, w.EnergyCapacity);
         Assert.Equal(0, w.EnergyUsed);
-        Assert.Equal(20, w.IncomePerMinute);
+        Assert.Equal(Economy.HqIncomePerMinute, w.IncomePerMinute);
     }
 
     [Fact]
-    public void BaseIncome_Is20PerMinute()
+    public void BaseIncome_IsPaidEveryMinute()
     {
         World w = NewWorld();
         Run(w, 60);
-        Assert.Equal(Economy.StartResources + 20, w.Resources);
+        Assert.Equal(Economy.StartResources + Economy.HqIncomePerMinute, w.Resources);
         Run(w, 120);
-        Assert.Equal(Economy.StartResources + 60, w.Resources);
+        Assert.Equal(Economy.StartResources + 3 * Economy.HqIncomePerMinute, w.Resources);
     }
 
     [Fact]
@@ -41,8 +41,10 @@ public class EconomyTests
         w.Step();
 
         Assert.Equal(Economy.StartResources - 100, w.Resources);
-        Assert.Equal(20 + 120, w.EnergyCapacity);
+        Assert.Equal(20, w.EnergyCapacity); // still being built
         Assert.Equal(2, w.Buildings.Count);
+        for (int i = 0; i < 13 * World.TicksPerSecond; i++) w.Step();
+        Assert.Equal(20 + 120, w.EnergyCapacity);
     }
 
     [Fact]
@@ -61,7 +63,7 @@ public class EconomyTests
         World w = NewWorld();
         w.PlaceBuilding(BuildingKind.PowerPlant, 20, 10);
         w.PlaceBuilding(BuildingKind.SupplyCenter, 24, 10);
-        Assert.Equal(20 + 60, w.IncomePerMinute);
+        Assert.Equal(Economy.HqIncomePerMinute + Economy.SupplyCenterIncome[0], w.IncomePerMinute);
         Assert.Equal(20, w.EnergyUsed);
     }
 
@@ -78,11 +80,11 @@ public class EconomyTests
         Building b2 = w2.PlaceBuilding(BuildingKind.Barracks, 20, 10);
         Assert.True(w2.EnergyShortage);
         Assert.False(b2.Powered);
-        Assert.Equal(20, w2.IncomePerMinute);
+        Assert.Equal(Economy.HqIncomePerMinute, w2.IncomePerMinute);
 
         Building s2 = w2.PlaceBuilding(BuildingKind.SupplyCenter, 30, 10);
         Assert.False(s2.Powered);
-        Assert.Equal(20, w2.IncomePerMinute); // supply center gives nothing while unpowered
+        Assert.Equal(Economy.HqIncomePerMinute, w2.IncomePerMinute); // supply center gives nothing while unpowered
         Assert.True(power.Powered);
     }
 
@@ -90,18 +92,19 @@ public class EconomyTests
     public void Build_IsIgnored_WhenTooExpensive_OrBlocked()
     {
         World w = NewWorld();
+        Assert.Equal(300, Economy.StartResources);
         w.Enqueue(new BuildCommand(BuildingKind.PowerPlant, 20, 10));   // 100
-        w.Enqueue(new BuildCommand(BuildingKind.VehicleFactory, 30, 10)); // 300
-        w.Enqueue(new BuildCommand(BuildingKind.Barracks, 40, 10));       // 200 -> total 600 > 500, ignored
+        w.Enqueue(new BuildCommand(BuildingKind.SupplyCenter, 30, 10)); // 150
+        w.Enqueue(new BuildCommand(BuildingKind.Barracks, 40, 10));     // 200 -> total 450 > 300, ignored
         w.Step();
         Assert.Equal(3, w.Buildings.Count);
-        Assert.Equal(100, w.Resources);
+        Assert.Equal(50, w.Resources);
 
         // On top of the base: blocked, and not charged.
         w.Enqueue(new BuildCommand(BuildingKind.PowerPlant, 11, 11));
         w.Step();
         Assert.Equal(3, w.Buildings.Count);
-        Assert.Equal(100, w.Resources);
+        Assert.Equal(50, w.Resources);
     }
 
     [Fact]

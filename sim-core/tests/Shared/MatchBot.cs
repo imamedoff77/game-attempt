@@ -15,7 +15,7 @@ public static class MatchBot
         Vec2 Point() => new Vec2(Fix64.FromInt(rng.Next(2, 62)), Fix64.FromInt(rng.Next(2, 62)));
         int[] Some() => mine.OrderBy(_ => rng.Next()).Take(rng.Next(1, 12)).Select(u => u.Id).OrderBy(i => i).ToArray();
 
-        switch (rng.Next(8))
+        switch (rng.Next(11))
         {
             case 0:
             case 1:
@@ -40,6 +40,15 @@ public static class MatchBot
                 }
             case 6:
                 return myBuildings.Count == 0 ? null : new CancelQueuedCommand(myBuildings[rng.Next(myBuildings.Count)].Id, rng.Next(0, 3));
+            case 8:
+                return new UpgradeBaseCommand();
+            case 9:
+                {
+                    var building = myBuildings.Where(b => b.UnderConstruction).ToList();
+                    return building.Count == 0 ? null : new CancelBuildCommand(building[rng.Next(building.Count)].Id);
+                }
+            case 10:
+                return new ResearchCommand((UpgradeKind)rng.Next(Defs.UpgradeCount));
             default:
                 return myBuildings.Count == 0 ? null : new SetRallyCommand(myBuildings[rng.Next(myBuildings.Count)].Id, Point());
         }

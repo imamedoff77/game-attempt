@@ -26,6 +26,8 @@
 
   <ItemGroup>
     <Compile Include="..\Shared\MatchBot.cs" Link="MatchBot.cs" />
+    <Compile Include="..\Shared\AiMatch.cs" Link="AiMatch.cs" />
+    <Compile Include="..\Shared\MissionBot.cs" Link="MissionBot.cs" />
   </ItemGroup>
 
   <ItemGroup>

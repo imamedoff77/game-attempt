@@ -45,6 +45,8 @@ public class StringTableTests
         StringTable en = English();
         foreach (UnitKind k in Enum.GetValues<UnitKind>()) Assert.True(en.Has("unit." + k), "unit." + k);
         foreach (BuildingKind k in Enum.GetValues<BuildingKind>()) Assert.True(en.Has("building." + k), "building." + k);
+        foreach (UpgradeKind k in Enum.GetValues<UpgradeKind>()) Assert.True(en.Has("upgrade." + k), "upgrade." + k);
+        foreach (AiDifficulty k in Enum.GetValues<AiDifficulty>()) Assert.True(en.Has("difficulty." + k), "difficulty." + k);
     }
 
     [Fact]

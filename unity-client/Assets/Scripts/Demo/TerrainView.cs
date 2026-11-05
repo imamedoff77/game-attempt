@@ -9,6 +9,9 @@ using UnityEngine;
 public sealed class TerrainView : MonoBehaviour
 {
     private const int PixelsPerCell = 6;
+    /// <summary>Cells of open desert painted around the map, so its edge does not show as a void; props go on the inner part of it.</summary>
+    private const int Pad = 24;
+    private const int PropPad = 12;
 
     private static readonly Color Sand = new Color(0.87f, 0.76f, 0.52f);
     private static readonly Color Stony = new Color(0.66f, 0.58f, 0.47f);
@@ -25,9 +28,9 @@ public sealed class TerrainView : MonoBehaviour
         _map = map;
 
         // Ground
-        var ground = MeshFactory.Spawn("Ground", MeshFactory.Quad(map.Width, map.Height),
+        var ground = MeshFactory.Spawn("Ground", MeshFactory.Quad(map.Width + 2 * Pad, map.Height + 2 * Pad),
             new Material(groundMaterial) { mainTexture = BuildGroundTexture(map) }, transform);
-        ground.transform.localPosition = Vector3.zero;
+        ground.transform.localPosition = new Vector3(-Pad, 0f, -Pad);
 
         // Overlay (hidden until asked for)
         _overlayTexture = new Texture2D(map.Width, map.Height, TextureFormat.RGBA32, false)
@@ -66,17 +69,20 @@ public sealed class TerrainView : MonoBehaviour
 
     private static Texture2D BuildGroundTexture(MapGrid map)
     {
-        int w = map.Width * PixelsPerCell, h = map.Height * PixelsPerCell;
+        int w = (map.Width + 2 * Pad) * PixelsPerCell, h = (map.Height + 2 * Pad) * PixelsPerCell;
         var pixels = new Color32[w * h];
 
         for (int py = 0; py < h; py++)
         {
-            float cz = (py + 0.5f) / PixelsPerCell;
+            float cz = (py + 0.5f) / PixelsPerCell - Pad;
             for (int px = 0; px < w; px++)
             {
-                float cx = (px + 0.5f) / PixelsPerCell;
-                int nx = Mathf.Min((int)cx, map.Width - 1), nz = Mathf.Min((int)cz, map.Height - 1);
+                float cx = (px + 0.5f) / PixelsPerCell - Pad;
+                bool outside = cx < 0f || cz < 0f || cx >= map.Width || cz >= map.Height;
+                // outside the map the nearest edge cell decides (a river carries on, rocks turn into stony ground)
+                int nx = Mathf.Clamp((int)Mathf.Floor(cx), 0, map.Width - 1), nz = Mathf.Clamp((int)Mathf.Floor(cz), 0, map.Height - 1);
                 TerrainType nearest = map.GetTerrain(nx, nz);
+                if (outside && nearest == TerrainType.Rock) nearest = TerrainType.Stony;
 
                 Color c;
                 if (nearest == TerrainType.Water)
@@ -98,6 +104,7 @@ public sealed class TerrainView : MonoBehaviour
 
                 float grain = (Hash(px, py) - 0.5f) * 0.05f;
                 c *= 1f + grain;
+                if (outside) c *= 0.9f; // a faint edge to the battlefield
                 pixels[py * w + px] = new Color(c.r, c.g, c.b, 1f);
             }
         }
@@ -146,10 +153,15 @@ public sealed class TerrainView : MonoBehaviour
         var props = new GameObject("Props").transform;
         props.SetParent(transform, false);
 
-        for (int y = 0; y < map.Height; y++)
+        for (int y = -PropPad; y < map.Height + PropPad; y++)
         {
-            for (int x = 0; x < map.Width; x++)
+            for (int x = -PropPad; x < map.Width + PropPad; x++)
             {
+                if (!map.InBounds(x, y))
+                {
+                    PlaceOutsideProp(map, x, y, rocks, cactus, bush, props, palette);
+                    continue;
+                }
                 TerrainType t = map.GetTerrain(x, y);
                 float r1 = Hash(x * 31 + 1, y * 17 + 9), r2 = Hash(x * 11 + 7, y * 23 + 2), r3 = Hash(x * 5 + 13, y * 3 + 4);
 
@@ -175,6 +187,22 @@ public sealed class TerrainView : MonoBehaviour
                     Spawn(bush, props, palette, new Vector3(x + 0.5f, 0f, y + 0.5f), r2 * 360f, Vector3.one * (0.8f + r3 * 0.6f));
             }
         }
+    }
+
+    /// <summary>A sparse scatter of rocks, cacti and bushes beyond the map edge (terrain there follows the nearest edge cell).</summary>
+    private void PlaceOutsideProp(MapGrid map, int x, int y, GameObject[] rocks, GameObject cactus, GameObject bush, Transform parent, Material palette)
+    {
+        int cx = Mathf.Clamp(x, 0, map.Width - 1), cy = Mathf.Clamp(y, 0, map.Height - 1);
+        if (map.GetTerrain(cx, cy) == TerrainType.Water) return;
+        float r1 = Hash(x * 31 + 1000, y * 17 + 9), r2 = Hash(x * 11 + 7, y * 23 + 2000), r3 = Hash(x * 5 + 13, y * 3 + 4);
+        var at = new Vector3(x + 0.5f, 0f, y + 0.5f);
+        if (r1 < 0.012f)
+        {
+            float scale = 1.1f + r2 * 0.8f;
+            Spawn(rocks[(int)(r3 * rocks.Length) % rocks.Length], parent, palette, at, r2 * 360f, new Vector3(scale, scale * (0.8f + r3 * 0.6f), scale));
+        }
+        else if (r1 < 0.022f) Spawn(cactus, parent, palette, at, r2 * 360f, Vector3.one * (0.9f + r3 * 0.5f));
+        else if (r1 < 0.05f) Spawn(bush, parent, palette, at, r2 * 360f, Vector3.one * (0.8f + r3 * 0.6f));
     }
 
     private static bool NextTo(MapGrid map, int x, int y, TerrainType type)

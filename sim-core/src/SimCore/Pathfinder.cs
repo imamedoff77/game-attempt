@@ -17,10 +17,18 @@ namespace SimCore
         private static readonly int[] Dx = { 0, 1, 0, -1, 1, 1, -1, -1 };
         private static readonly int[] Dy = { -1, 0, 1, 0, -1, 1, 1, -1 };
 
-        /// <summary>Cells from start to goal inclusive, or null when the goal cannot be reached.</summary>
-        public static List<(int x, int y)> FindPath(MapGrid map, int sx, int sy, int gx, int gy)
+        /// <summary>
+        /// Cells from start to goal inclusive, or null when the goal cannot be reached. With
+        /// <paramref name="nearestReachable"/> a blocked or cut-off goal is not an error: the path ends on the
+        /// reachable cell closest to the goal (ties: lowest cell index), which may be the start itself.
+        /// With <paramref name="mirrored"/> the search runs as if the map were turned half a turn (neighbour order and every
+        /// tie-break reversed), so on a map that is its own half-turn image the second player's routes are the exact mirror
+        /// images of the first player's: neither side gets the shorter-looking detour.
+        /// </summary>
+        public static List<(int x, int y)> FindPath(MapGrid map, int sx, int sy, int gx, int gy, bool nearestReachable = false, bool mirrored = false)
         {
-            if (!map.InBounds(sx, sy) || !map.IsWalkable(gx, gy)) return null;
+            if (!map.InBounds(sx, sy)) return null;
+            if (!nearestReachable && !map.IsWalkable(gx, gy)) return null;
             if (sx == gx && sy == gy) return new List<(int, int)> { (sx, sy) };
 
             int w = map.Width;
@@ -33,24 +41,32 @@ namespace SimCore
             var heap = new MinHeap();
             int start = sy * w + sx;
             int goal = gy * w + gx;
+            int flip = mirrored ? -1 : 1;
             gScore[start] = 0;
-            heap.Push(Key(Heuristic(sx, sy, gx, gy), Heuristic(sx, sy, gx, gy), start));
+            int best = start;
+            int bestSqr = SqrDist(sx, sy, gx, gy);
+            heap.Push(Key(Heuristic(sx, sy, gx, gy), Heuristic(sx, sy, gx, gy), Order(start, cells, mirrored)));
 
             while (heap.Count > 0)
             {
-                int current = (int)(heap.Pop() & 0xFFFFF);
+                int current = Order((int)(heap.Pop() & 0xFFFFF), cells, mirrored);
                 if (closed[current]) continue;
                 closed[current] = true;
                 if (current == goal) break;
 
                 int cx = current % w, cy = current / w;
+                if (nearestReachable)
+                {
+                    int sqr = SqrDist(cx, cy, gx, gy);
+                    if (sqr < bestSqr || (sqr == bestSqr && (mirrored ? current > best : current < best))) { bestSqr = sqr; best = current; }
+                }
                 for (int d = 0; d < 8; d++)
                 {
-                    int nx = cx + Dx[d], ny = cy + Dy[d];
+                    int nx = cx + flip * Dx[d], ny = cy + flip * Dy[d];
                     if (!map.IsWalkable(nx, ny)) continue;
 
                     bool diagonal = d >= 4;
-                    if (diagonal && (!map.IsWalkable(cx + Dx[d], cy) || !map.IsWalkable(cx, cy + Dy[d]))) continue;
+                    if (diagonal && (!map.IsWalkable(cx + flip * Dx[d], cy) || !map.IsWalkable(cx, cy + flip * Dy[d]))) continue;
 
                     int n = ny * w + nx;
                     if (closed[n]) continue;
@@ -61,20 +77,28 @@ namespace SimCore
                     gScore[n] = g;
                     parent[n] = current;
                     int h = Heuristic(nx, ny, gx, gy);
-                    heap.Push(Key(g + h, h, n));
+                    heap.Push(Key(g + h, h, Order(n, cells, mirrored)));
                 }
             }
 
-            if (!closed[goal]) return null;
+            int end = goal;
+            if (!closed[goal])
+            {
+                if (!nearestReachable) return null;
+                end = best;
+            }
 
             var path = new List<(int, int)>();
-            for (int c = goal; c != -1; c = parent[c]) path.Add((c % w, c / w));
+            for (int c = end; c != -1; c = parent[c]) path.Add((c % w, c / w));
             path.Reverse();
             return Straighten(map, path);
         }
 
-        /// <summary>The closest walkable cell to (x, y), searching outwards in rings; null if the map has none.</summary>
-        public static (int x, int y)? NearestWalkable(MapGrid map, int x, int y)
+        // Cell number as used for tie-breaking: turned around for the mirrored search (the mapping is its own inverse).
+        private static int Order(int cell, int cells, bool mirrored) => mirrored ? cells - 1 - cell : cell;
+
+        /// <summary>The closest walkable cell to (x, y), searching outwards in rings (ties: the first one met; the mirrored search meets them in the opposite order); null if the map has none.</summary>
+        public static (int x, int y)? NearestWalkable(MapGrid map, int x, int y, bool mirrored = false)
         {
             if (map.IsWalkable(x, y)) return (x, y);
 
@@ -82,10 +106,11 @@ namespace SimCore
             for (int r = 1; r <= maxRadius; r++)
             {
                 int bestDist = int.MaxValue, bx = 0, by = 0;
-                for (int dy = -r; dy <= r; dy++)
+                for (int iy = -r; iy <= r; iy++)
                 {
-                    for (int dx = -r; dx <= r; dx++)
+                    for (int ix = -r; ix <= r; ix++)
                     {
+                        int dx = mirrored ? -ix : ix, dy = mirrored ? -iy : iy;
                         if (Math.Max(Math.Abs(dx), Math.Abs(dy)) != r) continue;
                         if (!map.IsWalkable(x + dx, y + dy)) continue;
                         int dist = dx * dx + dy * dy;
@@ -133,6 +158,8 @@ namespace SimCore
             }
             return result;
         }
+
+        private static int SqrDist(int x, int y, int gx, int gy) => (x - gx) * (x - gx) + (y - gy) * (y - gy);
 
         // Octile distance: 10 * max + 4 * min.
         private static int Heuristic(int x, int y, int gx, int gy)

@@ -299,11 +299,13 @@ public static class GameBuild
         // Detailed models for the art style test (null = no detailed version of that unit / building).
         SetObjects(so, "unitModelsHd", new[]
         {
-            Model("unit_rifleman_hd"), Model("unit_rocket_hd"), null, Model("unit_tank_hd"),
+            Model("unit_rifleman_hd"), Model("unit_rocket_hd"), Model("unit_jeep_hd"), Model("unit_tank_hd"),
+            Model("unit_sniper_hd"), Model("unit_armoredcar_hd"),
         });
         SetObjects(so, "buildingModelsHd", new[]
         {
-            null, null, null, Model("bld_barracks_hd"), null,
+            Model("bld_hq_hd"), Model("bld_power_hd"), Model("bld_supply_hd"), Model("bld_barracks_hd"), Model("bld_factory_hd"),
+            Model("bld_repair_hd"), Model("bld_tower_hd"),
         });
         SetObjects(so, "rockModels", new[] { Model("prop_rock_a"), Model("prop_rock_b"), Model("prop_rock_c") });
         so.FindProperty("palmModel").objectReferenceValue = Model("prop_palm");

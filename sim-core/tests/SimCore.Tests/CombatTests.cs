@@ -60,7 +60,7 @@ public class CombatTests
         Building hq = w.PlaceBuilding(BuildingKind.Hq, 40, 40, World.TeamEnemy);
         Unit tank = w.SpawnUnit(UnitKind.Tank, P(10, 10));
         w.Enqueue(new AttackCommand(new[] { tank.Id }, AttackKind.Building, hq.Id));
-        Run(w, 120);
+        Run(w, 400); // a headquarters is tough
         Assert.Null(w.GetBuilding(hq.Id));
         Assert.Equal(0, w.Map.BuildingAt(41, 41));
         Assert.True(w.Map.IsWalkable(41, 41));
@@ -130,7 +130,7 @@ public class CombatTests
         Building hq = w.PlaceBuilding(BuildingKind.Hq, 10, 10);
         Unit enemy = w.SpawnUnit(UnitKind.Tank, P(20, 12), World.TeamEnemy);
         w.SetGuard(enemy);
-        Run(w, 120);
+        Run(w, 400);
         Assert.False(w.HasBuilding(BuildingKind.Hq, World.TeamPlayer));
     }
 

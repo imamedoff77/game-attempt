@@ -87,4 +87,31 @@ namespace SimCore
             UnitIds = unitIds; TargetKind = targetKind; TargetId = targetId;
         }
     }
+
+    /// <summary>Order to stop building something that is still under construction; part of the price is refunded.</summary>
+    public sealed class CancelBuildCommand : Command
+    {
+        public int BuildingId { get; }
+
+        public CancelBuildCommand(int buildingId)
+        {
+            BuildingId = buildingId;
+        }
+    }
+
+    /// <summary>Order to start researching the next tier of an upgrade (one research at a time per team).</summary>
+    public sealed class ResearchCommand : Command
+    {
+        public UpgradeKind Kind { get; }
+
+        public ResearchCommand(UpgradeKind kind)
+        {
+            Kind = kind;
+        }
+    }
+
+    /// <summary>Order to raise the base to its next level (costs resources and time, then raises the unit limit).</summary>
+    public sealed class UpgradeBaseCommand : Command
+    {
+    }
 }

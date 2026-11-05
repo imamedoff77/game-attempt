@@ -55,3 +55,22 @@ Sınaq modelləri (`*_hd`) `generate_assets.py` içindədir: piyada, raket atan,
 ## Performans sınağını təkrar etmək
 
 Sınaq build-i (`GameBuild.BuildAndroidDev`) telefona qoyulur, yuxarı soldakı resurs yazısına 3 dəfə toxun, debug panel açılır: **Shadows**, **Models**, **Mood**, **FPS limit** düymələri. Nəticələr `adb logcat -s Unity | grep Perf` ilə oxunur (hər 5 saniyədə bir sətir: FPS, GPU ms, vahid sayı).
+
+## Hazırkı vəziyyət (Faza 2 sonu, 2026-11-05)
+
+Göndərilən görünüş: **detallı modellər + sərt kölgə (1024) + axşam əhval-ruhiyyəsi**. Bütün 6 vahid və 7 bina üçün `*_hd` modelləri var (`generate_assets.py`: jeep_hd, sniper_hd, armored_car_hd, hq_hd, power_plant_hd, supply_center_hd, vehicle_factory_hd, repair_station_hd, tower_hd + əvvəlki rifleman/rocket/tank/barracks). Sadə modellər ehtiyat kimi qalır (debug paneldə `Models` düyməsi). Üçbucaq sayları büdcədən xeyli aşağıdır (bina 340–1140, büdcə 3500), yəni final art üçün yer var. Bu hələ proseduralı "blok" üslubudur; real rəssam işi, animasiya, effektlər Faza 7-dədir.
+
+## Qrafika keçidi (2026-11-05): kod ilə edilən cila
+
+Rəssam işi olmadan, yalnız kodla əlavə olunanlar (hamısı telefonda yoxlandı, 46 vahidlik döyüşdə 60 FPS, GPU ~10 ms):
+
+- **Effektlər** (`Fx.cs`, hovuzlu, şəffaflıq yoxdur, kölgə atmır): lülə alovu, partlayış (od topu + zərbə halqası + yüksələn tüstü), texnikanın arxasında toz, zədəli binadan tüstü (can < 50 %) və alov (< 25 %) (`BuildingFx.cs`). Eyni anda ən çox 220 effekt.
+- **Vahid animasiyası** (`UnitView.Animate`): piyada yeriyəndə yellənir və qalxıb enir, texnika yırğalanır, atəş açanda geri təpir. Model hərəkət edir, sim vahidi yox.
+- **İnterfeys örtüyü** (`UiSkin.cs`): bütün düymə və panellər yuvarlaq tünd-mavi üslubda (prosedural 9-hissəli teksturalar), resurs və missiya panelləri fonlu.
+- **Xəritə kənarı**: yer rəngi xəritədən 24 xana kənara davam edir (ən yaxın kənar xananı izləyir, çay davam edir), 12 xana enində seyrək qaya/kaktus/kol; qara boşluq yoxdur.
+
+Hələ yoxdur (Faza 7): real modellər/animasiya klipləri, səs və musiqi, soft şəffaf tüstü, minimap, bina məhv olma anımasiyası (dağıntı).
+
+## Səs (2026-11-05)
+
+Bütün səslər sıfırdan, kodla yaradılır (`art/audio/generate_sounds.py` → `unity-client/Assets/Resources/Audio/*.wav`, lisenziya problemi yoxdur): 3 tüfəng səsi, top, raket, kiçik/böyük partlayış, klik, bina qoyma, vahid hazır, qələbə, məğlubiyyət, xəbərdarlıq (hələ istifadə olunmur) və 48 saniyəlik tünd ambient musiqi dövrəsi. Unity tərəfi `Sfx.cs`: 14 səs mənbəsi növbə ilə, eyni səs üçün minimum fasilə, ekrandan kənar səs 0,3 qat. Menyuda və pauzada "Sound: ON/OFF" (PlayerPrefs). Quraşdırıldı, çökmə və xəta yoxdur; səsin keyfiyyətini mən eşidə bilmirəm, rəy lazımdır. Yenidən yaratmaq: `python3 art/audio/generate_sounds.py unity-client/Assets/Resources/Audio`.

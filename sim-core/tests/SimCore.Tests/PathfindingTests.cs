@@ -153,7 +153,7 @@ public class PathfindingTests
     }
 
     [Fact]
-    public void Order_ToUnreachablePocket_IsIgnored()
+    public void Order_ToUnreachablePocket_GoesToTheClosestReachablePoint()
     {
         var map = new MapGrid(20, 20);
         for (int i = 8; i <= 12; i++)
@@ -168,9 +168,14 @@ public class PathfindingTests
         w.Enqueue(new MoveCommand(new[] { u.Id }, P(10, 10)));
 
         w.Step();
+        Assert.True(u.Moving);
 
+        for (int i = 0; i < 20 * World.TicksPerSecond; i++) w.Step();
+
+        // Stops just outside the wall nearest the goal (cell (10,7)); never enters the closed room.
         Assert.False(u.Moving);
-        Assert.Equal(P(2, 2), u.Pos);
+        Assert.Equal(10, u.Pos.X.ToInt());
+        Assert.Equal(7, u.Pos.Y.ToInt());
     }
 
     [Fact]
