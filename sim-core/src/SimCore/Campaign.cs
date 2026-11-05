@@ -278,6 +278,13 @@ namespace SimCore
             return paid;
         }
 
+        /// <summary>Joins another copy of the same player's progress (another device): the best stars of each mission and the larger wallet.</summary>
+        public void MergeFrom(CampaignProgress other)
+        {
+            for (int i = 0; i < _stars.Length; i++) _stars[i] = Math.Max(_stars[i], other._stars[i]);
+            Credits = Math.Max(Credits, other.Credits);
+        }
+
         public string Serialize()
         {
             var sb = new StringBuilder();

@@ -119,6 +119,28 @@ namespace SimCore
             Array.Clear(_claimed, 0, _claimed.Length);
         }
 
+        /// <summary>Joins another copy (another device): the more recent claim and the more recent task day win; on the same day the better progress counts.</summary>
+        public void MergeFrom(DailyProgress other)
+        {
+            if (other._lastClaimDay > _lastClaimDay) { _lastClaimDay = other._lastClaimDay; _streak = other._streak; }
+            else if (other._lastClaimDay == _lastClaimDay) _streak = Math.Max(_streak, other._streak);
+
+            if (other._taskDay > _taskDay)
+            {
+                _taskDay = other._taskDay;
+                Array.Copy(other._progress, _progress, TaskCount);
+                Array.Copy(other._claimed, _claimed, TaskCount);
+            }
+            else if (other._taskDay == _taskDay)
+            {
+                for (int i = 0; i < TaskCount; i++)
+                {
+                    _progress[i] = Math.Max(_progress[i], other._progress[i]);
+                    _claimed[i] |= other._claimed[i];
+                }
+            }
+        }
+
         public string Serialize()
         {
             string text = _lastClaimDay + "," + _streak + "," + _taskDay;

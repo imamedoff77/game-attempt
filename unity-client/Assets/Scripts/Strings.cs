@@ -34,6 +34,27 @@ public static class Strings
 
     public static string MissionBrief(int number) => Get("mission." + number + ".brief");
 
+    /// <summary>The player-facing text for a failed account call.</summary>
+    public static string AccountError(ApiResult result)
+    {
+        if (result.NetworkError) return Get("account.error.network");
+        if (result.Status == 429) return Get("account.error.rate_limited");
+        if (result.Error == "locked") return Get("account.error.locked", Mathf.Max(1, Mathf.CeilToInt((result.Details?.retryAfterSeconds ?? 60) / 60f)));
+        return AccountErrorByCode(result.Error);
+    }
+
+    public static string AccountErrorByCode(string code)
+    {
+        switch (code)
+        {
+            case "invalid_email": case "weak_password": case "email_taken": case "invalid_credentials": case "invalid_code":
+            case "invalid_google_token": case "wrong_password": case "unauthorized": case "unavailable": case "cancelled":
+                return Get("account.error." + code);
+            case "failed": return Get("account.error.invalid_google_token");
+            default: return Get("account.error.unknown");
+        }
+    }
+
     public static string TutorialText(int step) => Get("tutorial." + step);
 
     public static string DailyTaskText(DailyTask task)

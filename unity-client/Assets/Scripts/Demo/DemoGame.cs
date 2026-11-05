@@ -7,7 +7,7 @@ using UnityEngine;
 /// Owns the simulation (SimCore.World) and drives it at a fixed tick rate;
 /// everything on screen is just a view of that simulation.
 /// </summary>
-public sealed class DemoGame : MonoBehaviour
+public sealed partial class DemoGame : MonoBehaviour
 {
     public const int MapSize = DemoScenario.MapSize;
     private static readonly Vector2Int StartCenter = new Vector2Int(DemoScenario.StartX, DemoScenario.StartY);
@@ -152,10 +152,12 @@ public sealed class DemoGame : MonoBehaviour
         Fx.Init(markerMaterial);
         Sfx.Init(transform);
 
+        Account = gameObject.AddComponent<AccountService>();
         LoadProgress();
         Cam = Camera.main.GetComponent<RtsCamera>();
         LoadWorld(DemoScenario.Create(), StartCenter, 0); // frozen backdrop behind the main menu
         Touch = new TouchController(Cam, this);
+        if (Account.SignedIn) SyncProfile();
     }
 
     // ---- matches ----
@@ -227,6 +229,7 @@ public sealed class DemoGame : MonoBehaviour
         TutorialStep = -1;
         _tutorialDone = true;
         try { PlayerPrefs.SetInt(TutorialKey, 1); PlayerPrefs.Save(); } catch (System.Exception) { }
+        ProfileDirty = true;
     }
 
     // Moves the hints along as the player does what the current one asks.
@@ -242,6 +245,7 @@ public sealed class DemoGame : MonoBehaviour
 
     private void SaveProgress()
     {
+        ProfileDirty = true;
         try
         {
             PlayerPrefs.SetString(ProgressKey, Progress.Serialize());
@@ -544,6 +548,7 @@ public sealed class DemoGame : MonoBehaviour
 
     private void Update()
     {
+        TickProfileSync();
         if (Mode == GameMode.Menu) return; // the world is only a backdrop
         if (!Paused) Touch.Update();
 

@@ -40,3 +40,11 @@ unity-client/.utmp/
 # Developer-only server address baked into dev builds
 unity-client/Assets/Resources/devserver.txt
 unity-client/Assets/Resources/devserver.txt.meta
+
+# Account server development output
+server/AccountServer/outbox/
+outbox/
+unity-client/Assets/Resources/accountserver.txt
+unity-client/Assets/Resources/accountserver.txt.meta
+unity-client/Assets/Resources/googleclient.txt
+unity-client/Assets/Resources/googleclient.txt.meta

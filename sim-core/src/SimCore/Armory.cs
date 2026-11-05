@@ -48,6 +48,12 @@ namespace SimCore
                 if (_levels[k] > 0) world.SetKitBonus(team, (UnitKind)k, _levels[k] * BonusPerLevelMilli);
         }
 
+        /// <summary>Joins another copy of the same player's armory (another device): the higher level of each kind.</summary>
+        public void MergeFrom(Armory other)
+        {
+            for (int i = 0; i < _levels.Length; i++) _levels[i] = Math.Max(_levels[i], other._levels[i]);
+        }
+
         public string Serialize()
         {
             var sb = new StringBuilder();

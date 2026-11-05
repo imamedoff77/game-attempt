@@ -98,6 +98,7 @@ public static class GameBuild
         PlayerSettings.allowedAutorotateToLandscapeLeft = true;
         PlayerSettings.allowedAutorotateToLandscapeRight = true;
 
+        PlayerSettings.insecureHttpOption = InsecureHttpOption.DevelopmentOnly; // development builds may talk to the account server on this computer over http
         EditorUserBuildSettings.buildAppBundle = false;
         PlayerSettings.enableFrameTimingStats = true; // GPU/CPU frame times for the performance log (small cost)
         ConfigureSigning();
