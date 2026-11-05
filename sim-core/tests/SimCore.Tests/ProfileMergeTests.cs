@@ -92,4 +92,27 @@ public class ProfileMergeTests
         newer.MergeFrom(DailyProgress.Parse(""));
         Assert.False(newer.CanClaimReward(Day + 5));
     }
+
+    [Fact]
+    public void Stats_Merge_TakesTheLargerOfEachNumber_AndRoundTrips()
+    {
+        var a = new PlayerStats();
+        a.RecordMatch(true, true, true, 10, 4);
+        a.RecordMatch(true, false, false, 3, 1);
+        var b = new PlayerStats();
+        b.RecordMatch(true, true, false, 20, 2);
+        a.MergeFrom(b);
+        Assert.Equal(2, a.MatchesPlayed);
+        Assert.Equal(1, a.MatchesWon);
+        Assert.Equal(1, a.MissionsWon);
+        Assert.Equal(20, a.UnitsBuilt);
+        Assert.Equal(5, a.EnemiesDestroyed);
+        Assert.Equal(50, a.WinPercent);
+        Assert.Equal(a.Serialize(), PlayerStats.Parse(a.Serialize()).Serialize());
+        Assert.Equal("0,0,0,0,0", PlayerStats.Parse("garbage").Serialize());
+
+        var profileA = new ProfileData { Stats = a.Serialize() };
+        var profileB = new ProfileData { Stats = b.Serialize() };
+        Assert.True(ProfileMerge.Merge(profileA, profileB).SameAs(ProfileMerge.Merge(profileB, profileA)));
+    }
 }

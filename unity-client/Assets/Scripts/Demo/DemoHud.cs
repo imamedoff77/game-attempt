@@ -435,7 +435,7 @@ public sealed partial class DemoHud : MonoBehaviour
 
     // ---------------------------------------------------------------- main menu
 
-    private enum MenuPage { Main, Difficulty, Campaign, Briefing, Armory, Daily, Account }
+    private enum MenuPage { Main, Difficulty, Campaign, Briefing, Armory, Daily, Account, Profile }
     private MenuPage _page = MenuPage.Main;
     private int _briefingMission = 1;
 
@@ -461,6 +461,7 @@ public sealed partial class DemoHud : MonoBehaviour
         if (_page == MenuPage.Armory) { DrawArmory(); return; }
         if (_page == MenuPage.Daily) { DrawDaily(); return; }
         if (_page == MenuPage.Account) { DrawAccount(); return; }
+        if (_page == MenuPage.Profile) { DrawProfile(); return; }
 
         GUI.Label(new Rect(0f, Screen.height * 0.08f, Screen.width, Screen.height * 0.18f), Application.productName, title);
         if (_page == MenuPage.Main)
@@ -468,6 +469,8 @@ public sealed partial class DemoHud : MonoBehaviour
             string who = _game.Account.SignedIn && _game.Account.User != null ? _game.Account.User.displayName : Strings.Get("account.menuSignIn");
             var account = new Rect(Screen.width * 0.74f, Screen.height * 0.03f, Screen.width * 0.24f, Screen.height * 0.09f);
             if (GUI.Button(account, who, _button)) OpenAccountPage();
+            var profile = new Rect(account.x, account.yMax + Screen.height * 0.015f, account.width, account.height);
+            if (GUI.Button(profile, Strings.Get("profile.title"), _button)) _page = MenuPage.Profile;
         }
 
         Rect[] buttons = MenuColumn(_page == MenuPage.Main ? MainMenuButtons : 4);

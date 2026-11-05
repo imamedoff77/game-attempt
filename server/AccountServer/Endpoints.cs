@@ -17,7 +17,7 @@ public sealed record ProfileUpdateRequest(long BaseRevision, JsonObject? Data);
 public static class Endpoints
 {
     public const int MinPassword = 8, MaxPassword = 128, MaxDisplayName = 24;
-    private static readonly string[] ProfileKeys = { "campaign", "armory", "daily", "tutorial" };
+    private static readonly string[] ProfileKeys = { "campaign", "armory", "daily", "tutorial", "stats" };
     private const int MaxProfileValueLength = 512;
 
     private static IResult Error(int status, string code, object? extra = null) => Results.Json(new { error = code, details = extra }, statusCode: status);

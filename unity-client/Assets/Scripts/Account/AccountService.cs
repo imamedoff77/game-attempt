@@ -7,7 +7,7 @@ using UnityEngine.Networking;
 // ---- the JSON shapes of the account server (see server/ACCOUNTS.md); JsonUtility needs plain serializable classes ----
 
 [Serializable] public sealed class AccountUser { public long id; public string email; public string displayName; public bool emailVerified; public bool hasPassword; public bool hasGoogle; }
-[Serializable] public sealed class ProfileDto { public string campaign; public string armory; public string daily; public string tutorial; }
+[Serializable] public sealed class ProfileDto { public string campaign; public string armory; public string daily; public string tutorial; public string stats; }
 [Serializable] public sealed class SessionBody { public string token; public AccountUser user; public bool created; }
 [Serializable] public sealed class ProfileBody { public long revision; public ProfileDto data; }
 [Serializable] public sealed class ErrorDetails { public int retryAfterSeconds; public long revision; public ProfileDto data; }

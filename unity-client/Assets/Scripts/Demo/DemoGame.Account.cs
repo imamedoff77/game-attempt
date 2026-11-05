@@ -23,20 +23,22 @@ public sealed partial class DemoGame
         Armory = Armory.Serialize(),
         Daily = Daily.Serialize(),
         Tutorial = _tutorialDone ? "1" : "",
+        Stats = Stats.Serialize(),
     };
 
     private static ProfileData FromDto(ProfileDto dto) => dto == null ? new ProfileData() : new ProfileData
     {
-        Campaign = dto.campaign ?? "", Armory = dto.armory ?? "", Daily = dto.daily ?? "", Tutorial = dto.tutorial ?? "",
+        Campaign = dto.campaign ?? "", Armory = dto.armory ?? "", Daily = dto.daily ?? "", Tutorial = dto.tutorial ?? "", Stats = dto.stats ?? "",
     };
 
-    private static ProfileDto ToDto(ProfileData data) => new ProfileDto { campaign = data.Campaign, armory = data.Armory, daily = data.Daily, tutorial = data.Tutorial };
+    private static ProfileDto ToDto(ProfileData data) => new ProfileDto { campaign = data.Campaign, armory = data.Armory, daily = data.Daily, tutorial = data.Tutorial, stats = data.Stats };
 
     private void ApplyProfile(ProfileData data)
     {
         Progress = CampaignProgress.Parse(data.Campaign);
         Armory = Armory.Parse(data.Armory);
         Daily = DailyProgress.Parse(data.Daily);
+        Stats = PlayerStats.Parse(data.Stats);
         _tutorialDone = data.Tutorial == "1";
         SaveProgress();
         try { PlayerPrefs.SetInt(TutorialKey, _tutorialDone ? 1 : 0); PlayerPrefs.Save(); } catch (Exception) { }

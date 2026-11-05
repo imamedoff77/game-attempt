@@ -97,7 +97,9 @@ public sealed partial class DemoGame : MonoBehaviour
     private const string ArmoryKey = "armory.levels";
     /// <summary>The daily login reward and daily tasks (local clock for now).</summary>
     public DailyProgress Daily { get; private set; }
+    public PlayerStats Stats { get; private set; } = new PlayerStats();
     private const string DailyKey = "daily.progress";
+    private const string StatsKey = "player.stats";
     /// <summary>The first mission's guided hints: 0..3 are the steps, -1 means off (already done, skipped or another mode).</summary>
     public int TutorialStep { get; private set; } = -1;
     private bool _tutorialDone;
@@ -221,6 +223,9 @@ public sealed partial class DemoGame : MonoBehaviour
         string daily = null;
         try { daily = PlayerPrefs.GetString(DailyKey, ""); } catch (System.Exception) { }
         Daily = DailyProgress.Parse(daily);
+        string stats = null;
+        try { stats = PlayerPrefs.GetString(StatsKey, ""); } catch (System.Exception) { }
+        Stats = PlayerStats.Parse(stats);
         try { _tutorialDone = PlayerPrefs.GetInt(TutorialKey, 0) != 0; } catch (System.Exception) { }
     }
 
@@ -251,6 +256,7 @@ public sealed partial class DemoGame : MonoBehaviour
             PlayerPrefs.SetString(ProgressKey, Progress.Serialize());
             PlayerPrefs.SetString(ArmoryKey, Armory.Serialize());
             PlayerPrefs.SetString(DailyKey, Daily.Serialize());
+            PlayerPrefs.SetString(StatsKey, Stats.Serialize());
             PlayerPrefs.Save();
         }
         catch (System.Exception) { }
@@ -283,7 +289,9 @@ public sealed partial class DemoGame : MonoBehaviour
     private void RecordDaily()
     {
         bool won = Outcome == GameOutcome.Victory;
-        if (won || MatchSeconds >= 60f) Daily.Report(Today, DailyTaskKind.PlayMatches);
+        bool counted = won || MatchSeconds >= 60f;
+        if (counted) Daily.Report(Today, DailyTaskKind.PlayMatches);
+        Stats.RecordMatch(counted, won, won && Mode == GameMode.Campaign, UnitsBuilt, EnemiesDestroyed);
         if (won) Daily.Report(Today, Mode == GameMode.Campaign ? DailyTaskKind.WinMission : DailyTaskKind.WinSkirmish);
         SaveProgress();
     }

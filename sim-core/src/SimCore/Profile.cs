@@ -1,14 +1,15 @@
 namespace SimCore
 {
-    /// <summary>What a player's account keeps on the server: the four progress texts (see <see cref="CampaignProgress"/>, <see cref="Armory"/>, <see cref="DailyProgress"/>).</summary>
+    /// <summary>What a player's account keeps on the server: the progress texts (see <see cref="CampaignProgress"/>, <see cref="Armory"/>, <see cref="DailyProgress"/>, <see cref="PlayerStats"/>).</summary>
     public sealed class ProfileData
     {
         public string Campaign = "";
         public string Armory = "";
         public string Daily = "";
         public string Tutorial = "";
+        public string Stats = "";
 
-        public bool SameAs(ProfileData other) => Campaign == other.Campaign && Armory == other.Armory && Daily == other.Daily && Tutorial == other.Tutorial;
+        public bool SameAs(ProfileData other) => Campaign == other.Campaign && Armory == other.Armory && Daily == other.Daily && Tutorial == other.Tutorial && Stats == other.Stats;
     }
 
     public static class ProfileMerge
@@ -26,12 +27,15 @@ namespace SimCore
             armory.MergeFrom(Armory.Parse(server.Armory));
             DailyProgress daily = DailyProgress.Parse(local.Daily);
             daily.MergeFrom(DailyProgress.Parse(server.Daily));
+            PlayerStats stats = PlayerStats.Parse(local.Stats);
+            stats.MergeFrom(PlayerStats.Parse(server.Stats));
             return new ProfileData
             {
                 Campaign = campaign.Serialize(),
                 Armory = armory.Serialize(),
                 Daily = daily.Serialize(),
                 Tutorial = local.Tutorial == "1" || server.Tutorial == "1" ? "1" : "",
+                Stats = stats.Serialize(),
             };
         }
     }
