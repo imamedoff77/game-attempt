@@ -1,3 +1,4 @@
+using System.Net.Http.Json;
 using System.Net;
 using AccountServer;
 
@@ -123,5 +124,40 @@ public class SecurityTests
         Assert.Null(Endpoints.NormalizeEmail("Name <a@example.com>"));
         Assert.Null(Endpoints.NormalizeEmail(new string('a', 250) + "@example.com"));
         Assert.Null(Endpoints.NormalizeEmail(null));
+    }
+}
+
+public class InternalEndpointTests
+{
+    private static async Task<HttpResponseMessage> Verify(TestServer s, string? key, string? token)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, "/v1/internal/verify-session") { Content = JsonContent.Create(new { token }) };
+        if (key != null) request.Headers.Add("X-Internal-Key", key);
+        return await s.Client.SendAsync(request);
+    }
+
+    [Fact]
+    public async Task VerifySession_NeedsTheInternalKey_AndAnswersWithTheArmory()
+    {
+        await using TestServer s = await TestServer.StartAsync(c => c["Account:InternalKey"] = "relay-secret");
+        string token = await s.Register("player@example.com", "correct horse");
+        await s.Put("/v1/profile", new { baseRevision = 0, data = new { armory = "0,0,0,0,0,3" } }, token);
+
+        var ok = await TestServer.Json(await Verify(s, "relay-secret", token));
+        Assert.Equal("0,0,0,0,0,3", ok.GetProperty("armory").GetString());
+        Assert.True(ok.GetProperty("userId").GetInt64() > 0);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, (await Verify(s, null, token)).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await Verify(s, "wrong", token)).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await Verify(s, "relay-secret", "not-a-session")).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await Verify(s, "relay-secret", null)).StatusCode);
+    }
+
+    [Fact]
+    public async Task VerifySession_DoesNotExistWithoutAKey()
+    {
+        await using TestServer s = await TestServer.StartAsync();
+        string token = await s.Register();
+        Assert.Equal(HttpStatusCode.NotFound, (await Verify(s, "anything", token)).StatusCode);
     }
 }

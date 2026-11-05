@@ -18,17 +18,26 @@ internal sealed class TestPlayer : IDisposable
     public PeerLeft? PeerLeft;
     public readonly Random Bot;
     public Action<World>? Sabotage; // test hook: damage this player's own world once, to cause a desync
+    public string Auth = ""; // the account session token this player presents
+    public byte[]? Kit; // the Armory levels this player announces
     private int _nextThink;
 
     public TestPlayer(int seed) { Bot = new Random(seed); }
 
     public void Connect(MatchServer server) => Link.Connect("127.0.0.1", server.Port);
 
-    public void Create(ulong dataHash = 0) => Link.Send(new CreateRoom(MessageCodec.ProtocolVersion, dataHash == 0 ? Defs.DataHash : dataHash));
+    public void Create(ulong dataHash = 0) => Link.Send(new CreateRoom(MessageCodec.ProtocolVersion, dataHash == 0 ? Defs.DataHash : dataHash, Kit, Auth));
     public void Join(string code, ulong dataHash = 0, int version = MessageCodec.ProtocolVersion)
     {
         Code = code;
-        Link.Send(new JoinRoom(version, dataHash == 0 ? Defs.DataHash : dataHash, code));
+        Link.Send(new JoinRoom(version, dataHash == 0 ? Defs.DataHash : dataHash, code, Kit, Auth));
+    }
+
+    private static World NewWorld(byte[][] kits)
+    {
+        World world = OnlineScenario.Create();
+        for (int team = 0; team < kits.Length; team++) Armory.FromBytes(kits[team]).Apply(world, team);
+        return world;
     }
 
     /// <summary>Handles everything that arrived. Returns true if anything did.</summary>
@@ -45,13 +54,13 @@ internal sealed class TestPlayer : IDisposable
                 case MatchResume resume:
                     // Start the world over from nothing: the server now sends every turn played so far.
                     Resumed++;
-                    World = OnlineScenario.Create();
+                    World = NewWorld(resume.Kits);
                     Client = LockstepClient.Resume(World, resume, Link.Send);
                     Client.Start();
                     break;
                 case MatchStart start:
                     Start = start;
-                    World = OnlineScenario.Create();
+                    World = NewWorld(start.Kits);
                     Client = new LockstepClient(World, start.Team, start.InputDelayTurns, Link.Send);
                     Client.Start();
                     break;

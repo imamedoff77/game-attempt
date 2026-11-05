@@ -6,7 +6,7 @@
 
 - **Armory (anbar) = daimi vahid gücləndirmələri.** Hər vahid növü 0–5 səviyyə; hər səviyyə vahidin zərər və canına +4 % verir. Qiymət: piyada 30, kəskin atıcı 45, maşın 60 × (səviyyə+1) kredit. Kreditlər kampaniyada ulduz qazanmaqdan gəlir. Hamısını almaq mümkün deyil (~3600 kredit, kampaniya ~1500 verir), seçim vacibdir.
 - **Sim-core:** `World.SetKitBonus(team, kind, milli)` (ədədi sabit, hash-ə yalnız istifadə olunanda daxildir); zərər bonusu kəsr olduğu üçün hər atışdan atışa daşınır (`WithKit`, tüfəng 6 zərər vurur, +4 % yoxa çıxmasın). `Armory` sinfi səviyyə/qiymət/yadda saxlama (`PlayerPrefs`), `CampaignProgress.Spend/Add`.
-- **Onlayn qayda:** onlayn matçda hər iki oyunçu bonusları eyni dəyərlərlə qurmalıdır; server qiymətləri yoxlamalıdır. Bu Faza 5-də (matç başlanğıc məlumatına əlavə olunur). İndi yalnız kampaniya və kompüterə qarşı.
+- **Onlayn qayda:** onlayn matçda hər iki oyunçu bonusları eyni dəyərlərlə qurmalıdır; server qiymətləri yoxlamalıdır. Bu Faza 5-də (5.1 hazırdır, `FAZA_5_PLAN.md`). İndi yalnız kampaniya və kompüterə qarşı.
 
 ## İşlər
 

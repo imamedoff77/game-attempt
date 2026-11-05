@@ -79,3 +79,15 @@ Another database can be used with `ACCOUNTS_TEST_DB` (a connection string with t
 
 - `unity-client/Assets/Resources/accountserver.txt`: base URL of this server (e.g. `https://accounts.example.com`).
 - `unity-client/Assets/Resources/googleclient.txt`: the **Web application** OAuth client ID from Google Cloud (the same value as `Google:ClientId` on the server). The Android bridge (`Assets/Plugins/Android/GoogleSignInBridge.java`) also needs an **Android** OAuth client for package `com.imamedoff.irondoctrine` and the SHA-1 of the signing key registered in the same Google Cloud project. Without the file the Google button says it is not set up.
+
+## Game server sign-in check (online play)
+
+The relay (`server/GameServer`) can require accounts. Set the same secret on both servers:
+
+| Where | Variable | Meaning |
+|---|---|---|
+| account server | `Account__InternalKey` | long random secret; enables `POST /v1/internal/verify-session` (header `X-Internal-Key`) |
+| game server | `GAME_ACCOUNT_URL` | address of the account server (private network is best), e.g. `http://127.0.0.1:8080` |
+| game server | `GAME_ACCOUNT_KEY` | the same secret |
+
+With both set, players without a valid session cannot create or join rooms, and the Armory each brings is limited to what their account holds. With them unset the game server is open (guests allowed): development only. Never expose `/v1/internal/*` publicly: block it in the reverse proxy.

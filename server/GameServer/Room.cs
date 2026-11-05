@@ -15,6 +15,10 @@ internal sealed class Room
     public bool Finished;
     public int Seed;
     public int InputDelayTurns;
+    /// <summary>Each team's cleaned-up Armory levels, as sent when they created or joined the room.</summary>
+    public readonly byte[][] Kits = { new byte[0], new byte[0] };
+    /// <summary>The account id in each seat (0 = guest or an open server).</summary>
+    public readonly long[] AccountIds = new long[World.TeamCount];
     public readonly ulong[] Tokens = new ulong[World.TeamCount];
     /// <summary>Set while a seat is empty in a started match: after this moment the match is given up.</summary>
     public DateTime? GraceDeadlineUtc;

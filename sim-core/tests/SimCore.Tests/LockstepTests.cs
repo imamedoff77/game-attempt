@@ -13,10 +13,10 @@ public class MessageCodecTests
         new TurnBundle(7, new IReadOnlyList<Command>[] { new List<Command> { new QueueUnitCommand(1, UnitKind.Tank) }, new List<Command>() }),
         new HashReport(19, 0xDEADBEEFCAFEF00DUL),
         new DesyncNotice(24, 1UL, ulong.MaxValue),
-        new CreateRoom(1, 0x0123456789ABCDEFUL),
-        new JoinRoom(1, ulong.MaxValue, "K7Q2"),
+        new CreateRoom(3, 0x0123456789ABCDEFUL, new byte[] { 0, 1, 5 }, "tok-1"),
+        new JoinRoom(3, ulong.MaxValue, "K7Q2", new byte[] { 2, 2 }, "tok-2"),
         new RoomCreated("AB12"),
-        new MatchStart(1, 2, 123456789),
+        new MatchStart(1, 2, 123456789, 0, new[] { new byte[] { 1, 2 }, new byte[] { 5 } }),
         new Reject(RejectReason.WrongData),
         new PeerLeft(0),
         new Ping(),
@@ -24,6 +24,50 @@ public class MessageCodecTests
         new MatchResume(1, 2, 99, 1500, 1503),
         new PeerBack(0),
     };
+
+    [Fact]
+    public void Kits_AreCleanedOnTheWay_AndBadOnesAreRefused()
+    {
+        Assert.True(MessageCodec.TryDecode(MessageCodec.Encode(new CreateRoom(2, 1, new byte[] { 9, 3 })), out NetMessage m));
+        byte[] kit = ((CreateRoom)m).Kit;
+        Assert.Equal(Armory.FromBytes(null).ToBytes().Length, kit.Length);
+        Assert.Equal(Armory.MaxLevel, kit[0]);
+        Assert.Equal(3, kit[1]);
+
+        // a hand-made packet with a level above the maximum, and one with a too long kit, are not accepted
+        byte[] good = MessageCodec.Encode(new CreateRoom(2, 1, new byte[0]));
+        byte[] bad = (byte[])good.Clone();
+        bad[bad.Length - 2] = 200; // the last kit byte (one byte of auth length follows)
+        Assert.False(MessageCodec.TryDecode(bad, out _));
+        byte[] tooLong = (byte[])good.Clone();
+        tooLong[good.Length - 2 - kit.Length] = 40; // the kit length byte
+        Assert.False(MessageCodec.TryDecode(tooLong, out _));
+
+        var start = new MatchStart(0, 2, 1, 7, new[] { new byte[] { 1 }, null });
+        Assert.Equal(World.TeamCount, start.Kits.Length);
+        Assert.All(start.Kits, k => Assert.Equal(kit.Length, k.Length));
+    }
+
+    [Fact]
+    public void AuthToken_RoundTrips_AndBadOnesAreRefused()
+    {
+        string token = "AbC-123_xyz";
+        Assert.True(MessageCodec.TryDecode(MessageCodec.Encode(new CreateRoom(3, 1, null, token)), out NetMessage m));
+        Assert.Equal(token, ((CreateRoom)m).AuthToken);
+        Assert.True(MessageCodec.TryDecode(MessageCodec.Encode(new JoinRoom(3, 1, "K7Q2", null, token)), out m));
+        Assert.Equal(token, ((JoinRoom)m).AuthToken);
+        Assert.True(MessageCodec.TryDecode(MessageCodec.Encode(new CreateRoom(3, 1)), out m));
+        Assert.Equal("", ((CreateRoom)m).AuthToken);
+
+        byte[] good = MessageCodec.Encode(new CreateRoom(3, 1, null, "abc"));
+        byte[] control = (byte[])good.Clone();
+        control[control.Length - 1] = 7; // not printable
+        Assert.False(MessageCodec.TryDecode(control, out _));
+        byte[] lying = (byte[])good.Clone();
+        lying[lying.Length - 4] = 200; // says 200 characters, has 3
+        Assert.False(MessageCodec.TryDecode(lying, out _));
+        Assert.Throws<System.ArgumentException>(() => MessageCodec.Encode(new CreateRoom(3, 1, null, new string('a', 129))));
+    }
 
     [Fact]
     public void EveryMessage_SurvivesAWriteAndRead_AndEncodesIdentically()

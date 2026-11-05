@@ -16,12 +16,12 @@ public class ServerTests : IDisposable
         Defs.Load(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "gamedata.json")));
     }
 
-    private MatchServer NewServer(TimeSpan? idle = null, int maxViolations = 20, int maxRooms = 1000, TimeSpan? grace = null)
+    private MatchServer NewServer(TimeSpan? idle = null, int maxViolations = 20, int maxRooms = 1000, TimeSpan? grace = null, IAccountVerifier? accounts = null)
     {
         var server = new MatchServer(new ServerOptions
         {
             Port = 0, LogFolder = _logFolder, MaxViolationsPerPlayer = maxViolations, MaxRooms = maxRooms,
-            IdleTimeout = idle ?? TimeSpan.FromSeconds(10), ReconnectGrace = grace ?? TimeSpan.FromSeconds(60),
+            IdleTimeout = idle ?? TimeSpan.FromSeconds(10), ReconnectGrace = grace ?? TimeSpan.FromSeconds(60), Accounts = accounts,
         });
         server.Start();
         _servers.Add(server);
@@ -106,6 +106,93 @@ public class ServerTests : IDisposable
         Assert.Equal(5000, guest.Client.TicksExecuted);
         Assert.Equal(host.World!.StateHash(), guest.World!.StateHash());
         Assert.True(host.World.Units.Count(u => u.Id > 8) + guest.World.Units.Count(u => u.Id > 8) > 0, "the bots did nothing");
+    }
+
+    [Fact]
+    public void BothPlayersGetBothArmoryKits_CleanedUp_AndStayInSync()
+    {
+        MatchServer server = NewServer();
+        TestPlayer host = NewPlayer(server);
+        TestPlayer guest = NewPlayer(server);
+        var hostKit = new byte[Armory.FromBytes(null).ToBytes().Length];
+        hostKit[(int)UnitKind.Tank] = 3;
+        host.Kit = hostKit;
+        guest.Kit = new byte[] { 255, 200, 99, 4 }; // a cheater, and too short: cut down to the maximum, the rest is zero
+        host.Create();
+        Assert.True(WaitFor(() => host.RoomCode != null, 5000, host));
+        guest.Join(host.RoomCode!);
+        Assert.True(WaitFor(() => host.Start != null && guest.Start != null, 5000, host, guest));
+
+        foreach (TestPlayer p in new[] { host, guest })
+        {
+            Assert.Equal(3, p.Start!.Kits[0][(int)UnitKind.Tank]);
+            Assert.Equal(Armory.MaxLevel, p.Start.Kits[1][0]);
+            Assert.Equal(Armory.MaxLevel, p.Start.Kits[1][1]);
+            Assert.Equal(Armory.MaxLevel, p.Start.Kits[1][2]);
+            Assert.Equal(4, p.Start.Kits[1][3]);
+            Assert.Equal(0, p.Start.Kits[1][4]);
+        }
+        Assert.True(PlayBoth(host, guest, 2000), "the match did not finish in time");
+        Assert.False(host.Client!.Desynced);
+        Assert.False(guest.Client!.Desynced);
+        Assert.Equal(host.World!.StateHash(), guest.World!.StateHash());
+    }
+
+    private sealed class FakeAccounts : IAccountVerifier
+    {
+        public readonly Dictionary<string, VerifiedPlayer> Sessions = new();
+        public VerifiedPlayer? Verify(string token) => Sessions.TryGetValue(token, out VerifiedPlayer? p) ? p : null;
+    }
+
+    private static byte[] Kit(params (UnitKind kind, int level)[] levels)
+    {
+        byte[] kit = new Armory().ToBytes();
+        foreach ((UnitKind kind, int level) in levels) kit[(int)kind] = (byte)level;
+        return kit;
+    }
+
+    [Fact]
+    public void WithAnAccountCheck_GuestsAndBadTokensAreRefused()
+    {
+        var accounts = new FakeAccounts();
+        MatchServer server = NewServer(accounts: accounts);
+        TestPlayer guest = NewPlayer(server);
+        guest.Create();
+        Assert.True(WaitFor(() => guest.Rejected != null, 5000, guest));
+        Assert.Equal(RejectReason.NotSignedIn, guest.Rejected!.Reason);
+
+        TestPlayer forged = NewPlayer(server);
+        forged.Auth = "not-a-real-session";
+        forged.Create();
+        Assert.True(WaitFor(() => forged.Rejected != null, 5000, forged));
+        Assert.Equal(RejectReason.NotSignedIn, forged.Rejected!.Reason);
+    }
+
+    [Fact]
+    public void WithAnAccountCheck_TheArmoryIsLimitedToWhatTheAccountHolds_AndTheSameAccountCannotPlayItself()
+    {
+        var accounts = new FakeAccounts();
+        accounts.Sessions["tok-a"] = new VerifiedPlayer(1, "Anna", Kit((UnitKind.Tank, 2)));
+        accounts.Sessions["tok-b"] = new VerifiedPlayer(2, "Boris", Kit());
+        MatchServer server = NewServer(accounts: accounts);
+
+        TestPlayer host = NewPlayer(server), guest = NewPlayer(server), twin = NewPlayer(server);
+        host.Auth = "tok-a"; host.Kit = Kit((UnitKind.Tank, 5), (UnitKind.Rifleman, 5)); // claims more than the account holds
+        guest.Auth = "tok-b"; guest.Kit = Kit((UnitKind.Tank, 5));
+        twin.Auth = "tok-a";
+        host.Create();
+        Assert.True(WaitFor(() => host.RoomCode != null, 5000, host));
+
+        twin.Join(host.RoomCode!);
+        Assert.True(WaitFor(() => twin.Rejected != null, 5000, twin));
+        Assert.Equal(RejectReason.SameAccount, twin.Rejected!.Reason);
+
+        guest.Join(host.RoomCode!);
+        Assert.True(WaitFor(() => host.Start != null && guest.Start != null, 5000, host, guest));
+        Assert.Equal(2, host.Start!.Kits[0][(int)UnitKind.Tank]);
+        Assert.Equal(0, host.Start.Kits[0][(int)UnitKind.Rifleman]);
+        Assert.Equal(0, host.Start.Kits[1][(int)UnitKind.Tank]);
+        Assert.Equal(host.Start.Kits[0], guest.Start!.Kits[0]);
     }
 
     [Fact]

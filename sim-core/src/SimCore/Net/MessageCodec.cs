@@ -19,7 +19,8 @@ namespace SimCore
         public const int MaxCodeLength = 8;
 
         /// <summary>Raised whenever the wire format changes; the server refuses clients with another number.</summary>
-        public const int ProtocolVersion = 1;
+        public const int ProtocolVersion = 3;
+        public const int MaxAuthTokenLength = 128;
 
         public static byte[] Encode(NetMessage message)
         {
@@ -52,12 +53,16 @@ namespace SimCore
                     w.WriteByte(TypeCreateRoom);
                     w.WriteU16((ushort)c.ProtocolVersion);
                     w.WriteI64((long)c.DataHash);
+                    WriteKit(w, c.Kit);
+                    WriteAuth(w, c.AuthToken);
                     break;
                 case JoinRoom j:
                     w.WriteByte(TypeJoinRoom);
                     w.WriteU16((ushort)j.ProtocolVersion);
                     w.WriteI64((long)j.DataHash);
                     WriteCode(w, j.Code);
+                    WriteKit(w, j.Kit);
+                    WriteAuth(w, j.AuthToken);
                     break;
                 case RoomCreated rc:
                     w.WriteByte(TypeRoomCreated);
@@ -69,6 +74,7 @@ namespace SimCore
                     w.WriteByte((byte)ms.InputDelayTurns);
                     w.WriteI32(ms.Seed);
                     w.WriteI64((long)ms.Token);
+                    foreach (byte[] kit in ms.Kits) WriteKit(w, kit);
                     break;
                 case Reject rj:
                     w.WriteByte(TypeReject);
@@ -95,6 +101,7 @@ namespace SimCore
                     w.WriteI32(mr.Seed);
                     w.WriteI32(mr.ReplayTurns);
                     w.WriteI32(mr.NextSubmitTurn);
+                    foreach (byte[] kit in mr.Kits) WriteKit(w, kit);
                     break;
                 case PeerBack pb:
                     w.WriteByte(TypePeerBack);
@@ -153,15 +160,16 @@ namespace SimCore
                     }
                 case TypeCreateRoom:
                     {
-                        if (!r.TryReadU16(out ushort version) || !r.TryReadI64(out long hash) || r.Remaining != 0) return false;
-                        message = new CreateRoom(version, (ulong)hash);
+                        if (!r.TryReadU16(out ushort version) || !r.TryReadI64(out long hash)) return false;
+                        if (!TryReadKit(r, out byte[] kit) || !TryReadAuth(r, out string auth) || r.Remaining != 0) return false;
+                        message = new CreateRoom(version, (ulong)hash, kit, auth);
                         return true;
                     }
                 case TypeJoinRoom:
                     {
                         if (!r.TryReadU16(out ushort version) || !r.TryReadI64(out long hash)) return false;
-                        if (!TryReadCode(r, out string code) || r.Remaining != 0) return false;
-                        message = new JoinRoom(version, (ulong)hash, code);
+                        if (!TryReadCode(r, out string code) || !TryReadKit(r, out byte[] kit) || !TryReadAuth(r, out string auth) || r.Remaining != 0) return false;
+                        message = new JoinRoom(version, (ulong)hash, code, kit, auth);
                         return true;
                     }
                 case TypeRoomCreated:
@@ -173,8 +181,9 @@ namespace SimCore
                 case TypeMatchStart:
                     {
                         if (!r.TryReadByte(out byte team) || team >= World.TeamCount) return false;
-                        if (!r.TryReadByte(out byte delay) || delay < 1 || !r.TryReadI32(out int seed) || !r.TryReadI64(out long token) || r.Remaining != 0) return false;
-                        message = new MatchStart(team, delay, seed, (ulong)token);
+                        if (!r.TryReadByte(out byte delay) || delay < 1 || !r.TryReadI32(out int seed) || !r.TryReadI64(out long token)) return false;
+                        if (!TryReadKits(r, out byte[][] kits) || r.Remaining != 0) return false;
+                        message = new MatchStart(team, delay, seed, (ulong)token, kits);
                         return true;
                     }
                 case TypeRejoin:
@@ -188,8 +197,9 @@ namespace SimCore
                     {
                         if (!r.TryReadByte(out byte team) || team >= World.TeamCount) return false;
                         if (!r.TryReadByte(out byte delay) || delay < 1 || !r.TryReadI32(out int seed)) return false;
-                        if (!r.TryReadI32(out int replay) || replay < 0 || !r.TryReadI32(out int next) || next < 0 || r.Remaining != 0) return false;
-                        message = new MatchResume(team, delay, seed, replay, next);
+                        if (!r.TryReadI32(out int replay) || replay < 0 || !r.TryReadI32(out int next) || next < 0) return false;
+                        if (!TryReadKits(r, out byte[][] kits) || r.Remaining != 0) return false;
+                        message = new MatchResume(team, delay, seed, replay, next, kits);
                         return true;
                     }
                 case TypePeerBack:
@@ -225,6 +235,59 @@ namespace SimCore
             if (code == null || code.Length < 1 || code.Length > MaxCodeLength) return false;
             foreach (char c in code)
                 if (!((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'))) return false;
+            return true;
+        }
+
+        private static void WriteAuth(ByteWriter w, string token)
+        {
+            token = token ?? "";
+            if (token.Length > MaxAuthTokenLength) throw new ArgumentException("auth token too long");
+            w.WriteByte((byte)token.Length);
+            foreach (char c in token) w.WriteByte((byte)(c >= 33 && c <= 126 ? c : '?'));
+        }
+
+        /// <summary>Printable ASCII only, so garbage cannot sneak into logs or requests.</summary>
+        private static bool TryReadAuth(ByteReader r, out string token)
+        {
+            token = null;
+            if (!r.TryReadByte(out byte length) || length > MaxAuthTokenLength || r.Remaining < length) return false;
+            var chars = new char[length];
+            for (int i = 0; i < length; i++)
+            {
+                r.TryReadByte(out byte b);
+                if (b < 33 || b > 126) return false;
+                chars[i] = (char)b;
+            }
+            token = new string(chars);
+            return true;
+        }
+
+        private static void WriteKit(ByteWriter w, byte[] kit)
+        {
+            byte[] clean = NetKits.Clean(kit);
+            w.WriteByte((byte)clean.Length);
+            w.WriteBytes(clean);
+        }
+
+        private static bool TryReadKit(ByteReader r, out byte[] kit)
+        {
+            kit = null;
+            if (!r.TryReadByte(out byte length) || length > NetKits.MaxKitBytes || r.Remaining < length) return false;
+            var bytes = new byte[length];
+            for (int i = 0; i < length; i++)
+            {
+                r.TryReadByte(out bytes[i]);
+                if (bytes[i] > Armory.MaxLevel) return false;
+            }
+            kit = bytes;
+            return true;
+        }
+
+        private static bool TryReadKits(ByteReader r, out byte[][] kits)
+        {
+            kits = new byte[World.TeamCount][];
+            for (int t = 0; t < kits.Length; t++)
+                if (!TryReadKit(r, out kits[t])) return false;
             return true;
         }
 

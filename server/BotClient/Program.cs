@@ -22,8 +22,10 @@ if (colon > 0 && int.TryParse(address[(colon + 1)..], out int p)) { host = addre
 
 using var link = new GameConnection();
 link.Connect(host, port);
-if (args[1] == "host") link.Send(new CreateRoom(MessageCodec.ProtocolVersion, Defs.DataHash));
-else link.Send(new JoinRoom(MessageCodec.ProtocolVersion, Defs.DataHash, args[2].ToUpperInvariant()));
+// BOT_TOKEN: an account session token, for servers that only let signed-in players in.
+string authToken = Environment.GetEnvironmentVariable("BOT_TOKEN") ?? "";
+if (args[1] == "host") link.Send(new CreateRoom(MessageCodec.ProtocolVersion, Defs.DataHash, null, authToken));
+else link.Send(new JoinRoom(MessageCodec.ProtocolVersion, Defs.DataHash, args[2].ToUpperInvariant(), null, authToken));
 double seconds = args.Length > (args[1] == "join" ? 3 : 2) ? double.Parse(args[^1]) : 600;
 
 World? world = null;
@@ -42,6 +44,7 @@ while (clock.Elapsed.TotalSeconds < seconds)
             case MatchStart ms:
                 Console.WriteLine($"Match started, I am team {ms.Team}");
                 world = OnlineScenario.Create();
+                for (int team = 0; team < ms.Kits.Length; team++) Armory.FromBytes(ms.Kits[team]).Apply(world, team);
                 client = new LockstepClient(world, ms.Team, ms.InputDelayTurns, link.Send);
                 client.Start();
                 break;

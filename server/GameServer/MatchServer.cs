@@ -159,6 +159,29 @@ public sealed class MatchServer
         }
     }
 
+    /// <summary>
+    /// Works out who the player is and which Armory they may bring. On an open server (no account check) that is the guest with the
+    /// levels they claim; with an account check the token must be valid and the claim is cut down to what the account holds.
+    /// Sends the refusal itself and returns false when the player may not play.
+    /// </summary>
+    private bool Authenticate(Peer peer, string token, byte[] claimedKit, out long accountId, out byte[] kit)
+    {
+        accountId = 0;
+        kit = NetKits.Clean(claimedKit);
+        if (_options.Accounts == null) return true;
+
+        VerifiedPlayer? player = token.Length == 0 ? null : _options.Accounts.Verify(token);
+        if (player == null)
+        {
+            peer.Send(new Reject(RejectReason.NotSignedIn));
+            return false;
+        }
+        accountId = player.UserId;
+        byte[] owned = NetKits.Clean(player.Kit);
+        for (int i = 0; i < kit.Length; i++) kit[i] = Math.Min(kit[i], owned[i]);
+        return true;
+    }
+
     private bool HandleCreate(Peer peer, CreateRoom create)
     {
         if (create.ProtocolVersion != MessageCodec.ProtocolVersion)
@@ -166,6 +189,8 @@ public sealed class MatchServer
             peer.Send(new Reject(RejectReason.WrongVersion));
             return false;
         }
+
+        if (!Authenticate(peer, create.AuthToken, create.Kit, out long accountId, out byte[] kit)) return false;
 
         Room? room = null;
         lock (_roomsLock)
@@ -192,6 +217,8 @@ public sealed class MatchServer
         lock (room.Sync)
         {
             room.Players[0] = peer;
+            room.Kits[0] = kit;
+            room.AccountIds[0] = accountId;
             peer.Room = room;
             peer.Team = 0;
         }
@@ -206,6 +233,8 @@ public sealed class MatchServer
             peer.Send(new Reject(RejectReason.WrongVersion));
             return false;
         }
+
+        if (!Authenticate(peer, join.AuthToken, join.Kit, out long accountId, out byte[] kit)) return false;
 
         Room? room;
         lock (_roomsLock) _rooms.TryGetValue(join.Code, out room);
@@ -228,7 +257,15 @@ public sealed class MatchServer
                 return false;
             }
 
+            if (accountId != 0 && room.AccountIds[0] == accountId)
+            {
+                peer.Send(new Reject(RejectReason.SameAccount));
+                return false;
+            }
+
             room.Players[1] = peer;
+            room.Kits[1] = kit;
+            room.AccountIds[1] = accountId;
             peer.Room = room;
             peer.Team = 1;
             room.Seed = RandomNumberGenerator.GetInt32(int.MaxValue);
@@ -238,7 +275,7 @@ public sealed class MatchServer
             room.Started = true;
             Interlocked.Increment(ref MatchesStarted);
             for (int team = 0; team < World.TeamCount; team++)
-                room.Players[team]!.Send(new MatchStart(team, room.InputDelayTurns, room.Seed, room.Tokens[team]));
+                room.Players[team]!.Send(new MatchStart(team, room.InputDelayTurns, room.Seed, room.Tokens[team], room.Kits));
         }
         return true;
     }
@@ -276,7 +313,7 @@ public sealed class MatchServer
             peer.Team = rejoin.Team;
 
             LockstepRelay relay = room.Relay;
-            peer.Send(new MatchResume(rejoin.Team, room.InputDelayTurns, room.Seed, relay.TurnsBundled, relay.NextExpectedTurn(rejoin.Team)));
+            peer.Send(new MatchResume(rejoin.Team, room.InputDelayTurns, room.Seed, relay.TurnsBundled, relay.NextExpectedTurn(rejoin.Team), room.Kits));
             foreach (TurnBundle bundle in relay.Log) peer.Send(bundle);
             room.Players[1 - rejoin.Team]?.Send(new PeerBack(rejoin.Team));
             if (room.PlayerCount == World.TeamCount) room.GraceDeadlineUtc = null;

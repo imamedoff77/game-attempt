@@ -292,7 +292,8 @@ public sealed partial class DemoGame : MonoBehaviour
         bool counted = won || MatchSeconds >= 60f;
         if (counted) Daily.Report(Today, DailyTaskKind.PlayMatches);
         Stats.RecordMatch(counted, won, won && Mode == GameMode.Campaign, UnitsBuilt, EnemiesDestroyed);
-        if (won) Daily.Report(Today, Mode == GameMode.Campaign ? DailyTaskKind.WinMission : DailyTaskKind.WinSkirmish);
+        if (won && Mode == GameMode.Campaign) Daily.Report(Today, DailyTaskKind.WinMission);
+        else if (won && Mode == GameMode.Skirmish) Daily.Report(Today, DailyTaskKind.WinSkirmish);
         SaveProgress();
     }
 
@@ -351,8 +352,8 @@ public sealed partial class DemoGame : MonoBehaviour
 
     // ---- online ----
 
-    public void HostOnline(string address) => StartOnline(OnlineSession.Host(address));
-    public void JoinOnline(string address, string code) => StartOnline(OnlineSession.Join(address, code));
+    public void HostOnline(string address) => StartOnline(OnlineSession.Host(address, Armory.ToBytes(), Account.Token ?? ""));
+    public void JoinOnline(string address, string code) => StartOnline(OnlineSession.Join(address, code, Armory.ToBytes(), Account.Token ?? ""));
 
     private void StartOnline(OnlineSession session)
     {
@@ -368,9 +369,10 @@ public sealed partial class DemoGame : MonoBehaviour
     }
 
     /// <summary>Builds the starting world of an online match (also after a reconnect: the server then replays everything played so far).</summary>
-    private void BeginOnlineMatch(int team, System.Action<World> attach)
+    private void BeginOnlineMatch(int team, byte[][] kits, System.Action<World> attach)
     {
         World world = OnlineScenario.Create();
+        for (int t = 0; t < kits.Length; t++) Armory.FromBytes(kits[t]).Apply(world, t); // both players' bonuses, as the server announced them
         Vec2 hq = Vec2.Zero;
         foreach (Building b in world.Buildings)
             if (b.Kind == BuildingKind.Hq && b.Team == team) hq = new Vec2(Fix64.FromInt(b.X), Fix64.FromInt(b.Y));
@@ -557,15 +559,15 @@ public sealed partial class DemoGame : MonoBehaviour
     private void Update()
     {
         TickProfileSync();
-        if (Mode == GameMode.Menu) return; // the world is only a backdrop
-        if (!Paused) Touch.Update();
-
         if (Online != null)
         {
+            // Also at the menu: a room created from the Online page starts the match from here.
             NetMessage begin = Online.Pump();
-            if (begin is MatchStart start) BeginOnlineMatch(start.Team, w => Online.AttachWorld(w));
-            else if (begin is MatchResume resume) BeginOnlineMatch(resume.Team, w => Online.AttachResume(w, resume));
+            if (begin is MatchStart start) BeginOnlineMatch(start.Team, start.Kits, w => Online.AttachWorld(w));
+            else if (begin is MatchResume resume) BeginOnlineMatch(resume.Team, resume.Kits, w => Online.AttachResume(w, resume));
         }
+        if (Mode == GameMode.Menu) return; // the world is only a backdrop
+        if (!Paused) Touch.Update();
 
         bool catchingUp = OnlineMatch && Online?.Client != null && Online.Client.CatchingUp;
         if (catchingUp)
@@ -630,7 +632,7 @@ public sealed partial class DemoGame : MonoBehaviour
         UpdateSelectionMarkers();
         UpdateOutcome();
         UpdateTutorial();
-        if (Outcome != GameOutcome.Playing && !_outcomeSoundPlayed && IsOfflineMatch)
+        if (Outcome != GameOutcome.Playing && !_outcomeSoundPlayed && (IsOfflineMatch || OnlineMatch))
         {
             _outcomeSoundPlayed = true;
             Sfx.Play(Outcome == GameOutcome.Victory ? "victory" : "defeat", 0.9f, 0f);

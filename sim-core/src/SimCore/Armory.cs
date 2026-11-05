@@ -54,6 +54,23 @@ namespace SimCore
             for (int i = 0; i < _levels.Length; i++) _levels[i] = Math.Max(_levels[i], other._levels[i]);
         }
 
+        /// <summary>The levels as one byte per unit kind (for the match setup sent over the network).</summary>
+        public byte[] ToBytes()
+        {
+            var bytes = new byte[KindCount];
+            for (int i = 0; i < KindCount; i++) bytes[i] = (byte)_levels[i];
+            return bytes;
+        }
+
+        /// <summary>Levels from network bytes: anything missing is level 0, anything above the maximum is cut down, extra bytes are ignored.</summary>
+        public static Armory FromBytes(byte[] bytes)
+        {
+            var armory = new Armory();
+            if (bytes == null) return armory;
+            for (int i = 0; i < bytes.Length && i < KindCount; i++) armory._levels[i] = Math.Min((int)bytes[i], MaxLevel);
+            return armory;
+        }
+
         public string Serialize()
         {
             var sb = new StringBuilder();

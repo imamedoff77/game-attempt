@@ -1,0 +1,14 @@
+# Faza 5: Online 1v1 (plan və vəziyyət)
+
+> Ümumi plan: `GAME_PLAN.md`. Əsas (lockstep, relay server, qopma/yenidən qoşulma) Faza 1-də hazırdır; burada onun üstünə oyun qaydaları və hesab gəlir.
+
+## İşlər
+
+- [x] 5.1 (2026-11-05) **Onlayn matçda Armory.** Protokol 2: `CreateRoom`/`JoinRoom` oyunçunun Armory səviyyələrini (hər vahid növü üçün 1 bayt) göndərir, server onları təmizləyir (`NetKits.Clean`: maksimumdan böyük kəsilir, çatışmayan 0) və hər iki oyunçuya `MatchStart`/`MatchResume` ilə **hər iki komandanın** dəstini bildirir. Hər iki telefon (və bot) eyni bonusları qurur, ona görə hash eyni qalır. Testlər: `GameServerTests.BothPlayersGetBothArmoryKits...`, `LockstepTests.Kits_...`. Telefon + bot ilə 600+ tick sinxron (Jeep səviyyə 3).
+  - **Boşluq:** server hələ oyunçunun *həqiqətən* bu səviyyələrə sahib olduğunu yoxlamır (oyunçu 5-5-5 deyə bilər). Düzəliş: oyunçu hesab tokenini otağa göndərir, relay server hesab serverindən profil Armory-sini oxuyub `min(iddia, hesab)` qəbul edir. Pullu alışdan əvvəl mütləq (Faza 6).
+- [x] 5.2 (2026-11-05) **Hesab tokeni ilə otağa giriş.** Protokol 3: `CreateRoom`/`JoinRoom` hesab sessiya tokenini daşıyır (yalnız server görür, rəqibə getmir). Oyun serveri `GAME_ACCOUNT_URL` + `GAME_ACCOUNT_KEY` ilə başladılanda yalnız girişli oyunçuları qəbul edir (`RejectReason.NotSignedIn`), token hesab serverinin daxili endpoint-i `POST /v1/internal/verify-session` ilə yoxlanır (`Account__InternalKey`), Armory iddiası hesabda saxlanan səviyyə ilə məhdudlaşır, eyni hesab iki oturacağı tuta bilmir (`SameAccount`). Hər iki dəyişən boşdursa server açıqdır (inkişaf: qonaqlar, iddia olunan Armory). Testlər: GameServer 21, AccountServer 36. Telefon + hesab serveri + oyun serveri + bot ilə yoxlanıb.
+  - **Qalan boşluq:** hesabdakı Armory də telefondan sinxronlaşır (güvənilən məlumat), yəni indi yalnız iddianı hesaba bağlayırıq. Həqiqi yoxlama kreditlərin və alışların serverdə aparılmasını tələb edir (Faza 6-dan əvvəl).
+- [ ] 5.3 Rəqib tapma (kod yazmadan növbə), reytinq.
+- [x] 5.4a (2026-11-05) **Onlayn menyu.** Ana menyuda "Online": girişsiz oyunçuya "Sign in" + Account düyməsi; girişli oyunçu "Create room" (böyük otaq kodu göstərilir) və ya kodu yazıb "Join". Matç menyudan başlayır, oyunda "Leave" düyməsi, nəticə kartı (Victory/Defeat → Main menu). Server ünvanı `Assets/Resources/gameserver.txt` ("host:port", git-də yoxdur). Telefon + serverlər + bot ilə yoxlanıb.
+- [ ] 5.4b Tapşırıqlardan sonra 1v1-in açılması (qaydası dizayn qərarıdır), təslim olmaq əmri (indi "Leave" rəqibə qopma kimi görünür), onlayn nəticənin statistikaya sayılması server tərəfindən.
+- [ ] 5.5 Server vaxtı (gündəlik mükafatlar üçün), replay, çat, saxtakarlığa qarşı yoxlamalar.

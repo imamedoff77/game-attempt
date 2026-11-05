@@ -7,7 +7,13 @@ string? logFolder = args.Length > 1 ? args[1] : Path.Combine(AppContext.BaseDire
 using var cancel = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cancel.Cancel(); };
 
-var server = new MatchServer(new ServerOptions { Port = port, LogFolder = logFolder });
+// Sign-in check: GAME_ACCOUNT_URL (address of the account server) and GAME_ACCOUNT_KEY (its Account__InternalKey). Both unset = open server.
+string? accountUrl = Environment.GetEnvironmentVariable("GAME_ACCOUNT_URL");
+string? accountKey = Environment.GetEnvironmentVariable("GAME_ACCOUNT_KEY");
+using HttpAccountVerifier? verifier = !string.IsNullOrWhiteSpace(accountUrl) && !string.IsNullOrWhiteSpace(accountKey) ? new HttpAccountVerifier(accountUrl, accountKey) : null;
+Console.WriteLine(verifier != null ? "Only signed-in players may play (accounts: " + accountUrl + ")." : "Open server: guests may play (no account check).");
+
+var server = new MatchServer(new ServerOptions { Port = port, LogFolder = logFolder, Accounts = verifier });
 server.Start();
 Console.WriteLine($"Server listening on port {server.Port}. Press Ctrl+C to stop.");
 // Typed commands (only for testing by hand): "drop CODE TEAM" cuts a player's connection, as a bad network would.

@@ -18,6 +18,12 @@ public sealed class AccountOptions
     /// <summary>Requests per minute and address for the sign-in endpoints.</summary>
     public int AuthRatePerMinute { get; set; } = 30;
 
+    /// <summary>
+    /// Shared secret of the game (relay) server: it may ask who a session token belongs to (<c>POST /v1/internal/verify-session</c>).
+    /// Empty = that endpoint does not exist. Use a long random value and keep it out of the apps.
+    /// </summary>
+    public string InternalKey { get; set; } = "";
+
     public int SessionDays { get; set; } = 90;
     public int PasswordIterations { get; set; } = 600_000;
     public int MaxFailedLogins { get; set; } = 5;

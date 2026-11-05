@@ -55,23 +55,23 @@ public sealed class OnlineSession
     /// <summary>One line with the last window's numbers, for the developer panel. Also written to the log as "[Net] ...".</summary>
     public string NetStats { get; private set; } = "";
 
-    public static OnlineSession Host(string address) => Begin(address, null, true);
+    public static OnlineSession Host(string address, byte[] kit, string authToken) => Begin(address, null, true, kit, authToken);
 
-    public static OnlineSession Join(string address, string code)
+    public static OnlineSession Join(string address, string code, byte[] kit, string authToken)
     {
         code = (code ?? "").Trim().ToUpperInvariant();
         if (!MessageCodec.IsValidCode(code))
             return new OnlineSession { State = Phase.Ended, Status = "Room code looks wrong" };
-        return Begin(address, code, false);
+        return Begin(address, code, false, kit, authToken);
     }
 
-    private static OnlineSession Begin(string address, string code, bool host)
+    private static OnlineSession Begin(string address, string code, bool host, byte[] kit, string authToken)
     {
         var session = new OnlineSession();
         ParseAddress(address, out session._host, out session._port);
         session._firstMessage = host
-            ? (NetMessage)new CreateRoom(MessageCodec.ProtocolVersion, Defs.DataHash)
-            : new JoinRoom(MessageCodec.ProtocolVersion, Defs.DataHash, code);
+            ? (NetMessage)new CreateRoom(MessageCodec.ProtocolVersion, Defs.DataHash, kit, authToken)
+            : new JoinRoom(MessageCodec.ProtocolVersion, Defs.DataHash, code, kit, authToken);
         session._code = code;
         session.StartAttempt();
         return session;
@@ -87,6 +87,17 @@ public sealed class OnlineSession
         {
             port = p;
             host = host.Substring(0, colon);
+        }
+    }
+
+    private static string RefusalText(RejectReason reason)
+    {
+        switch (reason)
+        {
+            case RejectReason.NotSignedIn: return "Sign in from the Account screen to play online";
+            case RejectReason.SameAccount: return "You cannot play against your own account";
+            case RejectReason.WrongVersion: return "Update the game to play online";
+            default: return "Server refused: " + reason;
         }
     }
 
@@ -164,7 +175,7 @@ public sealed class OnlineSession
                     begin = resume;
                     break;
                 case Reject reject:
-                    End(Reconnecting ? "The match is over (" + reject.Reason + ")" : "Server refused: " + reject.Reason);
+                    End(Reconnecting ? "The match is over (" + reject.Reason + ")" : RefusalText(reject.Reason));
                     return null;
                 case PeerLeft _:
                     OpponentLeft = true;

@@ -78,6 +78,8 @@ public sealed partial class DemoHud : MonoBehaviour
         }
         if (_game.IsOfflineMatch && _game.Outcome == DemoGame.GameOutcome.Playing)
             if (GUI.Button(top[3], Strings.Get("button.pause"), _button)) _game.Paused = true;
+        if (_game.OnlineMatch && _game.Outcome == DemoGame.GameOutcome.Playing)
+            if (GUI.Button(top[3], Strings.Get("online.leave"), _button)) LeaveToMenu(); // no forfeit command yet: the opponent sees the player drop
 
         if (_game.SelectedBuilding != null) _menuOpen = false;
         if (_menuOpen && !_game.Placing) DrawBuildMenu(world);
@@ -365,6 +367,15 @@ public sealed partial class DemoHud : MonoBehaviour
 
         if (_game.Mode == DemoGame.GameMode.Campaign) { DrawMissionResult(style); return; }
 
+        if (_game.Mode == DemoGame.GameMode.Online)
+        {
+            Rect onlineCard = EndCardRect();
+            GUI.Box(onlineCard, "");
+            GUI.Label(new Rect(onlineCard.x, onlineCard.y, onlineCard.width, onlineCard.height * 0.5f), Strings.Get(won ? "outcome.victoryShort" : "outcome.defeatShort"), style);
+            if (GUI.Button(EndButtonRects(onlineCard)[0], Strings.Get("end.menu"), _button)) LeaveToMenu();
+            return;
+        }
+
         if (_game.Mode != DemoGame.GameMode.Skirmish)
         {
             var rect = new Rect(0f, Screen.height * 0.3f, Screen.width, Screen.height * 0.2f);
@@ -435,7 +446,7 @@ public sealed partial class DemoHud : MonoBehaviour
 
     // ---------------------------------------------------------------- main menu
 
-    private enum MenuPage { Main, Difficulty, Campaign, Briefing, Armory, Daily, Account, Profile }
+    private enum MenuPage { Main, Difficulty, Campaign, Briefing, Armory, Daily, Account, Profile, Online }
     private MenuPage _page = MenuPage.Main;
     private int _briefingMission = 1;
 
@@ -462,6 +473,7 @@ public sealed partial class DemoHud : MonoBehaviour
         if (_page == MenuPage.Daily) { DrawDaily(); return; }
         if (_page == MenuPage.Account) { DrawAccount(); return; }
         if (_page == MenuPage.Profile) { DrawProfile(); return; }
+        if (_page == MenuPage.Online) { DrawOnlinePage(); return; }
 
         GUI.Label(new Rect(0f, Screen.height * 0.08f, Screen.width, Screen.height * 0.18f), Application.productName, title);
         if (_page == MenuPage.Main)
@@ -478,11 +490,12 @@ public sealed partial class DemoHud : MonoBehaviour
         {
             if (GUI.Button(buttons[0], Strings.Get("mode.campaign"), _button)) _page = MenuPage.Campaign;
             if (GUI.Button(buttons[1], Strings.Get("mode.vsComputer"), _button)) _page = MenuPage.Difficulty;
-            if (GUI.Button(buttons[2], Strings.Get("mode.armory"), _button)) _page = MenuPage.Armory;
+            if (GUI.Button(buttons[2], Strings.Get("mode.online"), _button)) _page = MenuPage.Online;
+            if (GUI.Button(buttons[3], Strings.Get("mode.armory"), _button)) _page = MenuPage.Armory;
             string daily = Strings.Get("mode.daily") + (_game.Daily.HasSomethingToClaim(DemoGame.Today) ? "  (!)" : "");
-            if (GUI.Button(buttons[3], daily, _button)) _page = MenuPage.Daily;
+            if (GUI.Button(buttons[4], daily, _button)) _page = MenuPage.Daily;
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
-            if (GUI.Button(buttons[4], Strings.Get("mode.sandbox"), _button)) _game.StartDemo();
+            if (GUI.Button(buttons[5], Strings.Get("mode.sandbox"), _button)) _game.StartDemo();
 #endif
             return;
         }
@@ -496,17 +509,23 @@ public sealed partial class DemoHud : MonoBehaviour
     private void LeaveToMenu()
     {
         bool campaign = _game.Mode == DemoGame.GameMode.Campaign;
+        bool online = _game.OnlineMatch;
         _game.ReturnToMenu();
-        _page = campaign ? MenuPage.Campaign : MenuPage.Main;
+        _page = campaign ? MenuPage.Campaign : online ? MenuPage.Online : MenuPage.Main;
     }
 
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+    private const int MainMenuButtons = 6;
+#else
     private const int MainMenuButtons = 5;
+#endif
 
     private static Rect[] MenuColumn(int count)
     {
         bool tight = count > 4;
-        float w = Screen.width * 0.36f, h = Screen.height * (tight ? 0.1f : 0.12f), gap = Screen.height * (tight ? 0.02f : 0.025f);
-        float x = (Screen.width - w) / 2f, y = Screen.height * (tight ? 0.3f : 0.32f);
+        bool tighter = count > 5;
+        float w = Screen.width * 0.36f, h = Screen.height * (tighter ? 0.085f : tight ? 0.1f : 0.12f), gap = Screen.height * (tighter ? 0.017f : tight ? 0.02f : 0.025f);
+        float x = (Screen.width - w) / 2f, y = Screen.height * (tighter ? 0.28f : tight ? 0.3f : 0.32f);
         var rects = new Rect[count];
         for (int i = 0; i < count; i++) rects[i] = new Rect(x, y + i * (h + gap), w, h);
         return rects;
@@ -591,7 +610,7 @@ public sealed partial class DemoHud : MonoBehaviour
         if (_game.SelectedBuilding != null && !_game.Placing)
             foreach (Rect r in PanelRects(PanelButtonCount(_game.SelectedBuilding))) yield return r;
         if (_game.Paused) yield return PauseCardRect();
-        if (_game.IsOfflineMatch && _game.Outcome != DemoGame.GameOutcome.Playing) yield return EndCardRect();
+        if ((_game.IsOfflineMatch || _game.OnlineMatch) && _game.Outcome != DemoGame.GameOutcome.Playing) yield return EndCardRect();
     }
 
     /// <summary>Right-hand panel of the selected building: info box, one button per unit, cancel, rally.</summary>

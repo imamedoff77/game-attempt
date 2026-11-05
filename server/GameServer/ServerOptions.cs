@@ -25,4 +25,10 @@ public sealed class ServerOptions
 
     /// <summary>How long a started match waits for a player who lost the link to come back.</summary>
     public TimeSpan ReconnectGrace { get; init; } = TimeSpan.FromSeconds(60);
+
+    /// <summary>
+    /// When set, only signed-in players may create or join rooms (the token is checked with the account server) and each one's Armory
+    /// is limited to what their account holds. Null = open server for development: guests allowed, the Armory they claim is used.
+    /// </summary>
+    public IAccountVerifier? Accounts { get; init; }
 }

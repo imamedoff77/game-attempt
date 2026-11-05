@@ -12,6 +12,7 @@ public sealed record ResetRequest(string? Email, string? Code, string? NewPasswo
 public sealed record ChangePasswordRequest(string? CurrentPassword, string? NewPassword);
 public sealed record DeleteAccountRequest(string? Password);
 public sealed record UpdateMeRequest(string? DisplayName);
+public sealed record VerifySessionRequest(string? Token);
 public sealed record ProfileUpdateRequest(long BaseRevision, JsonObject? Data);
 
 public static class Endpoints
@@ -210,6 +211,22 @@ public static class Endpoints
             if (userId != null) await store.MarkVerified(userId.Value);
             string message = userId != null ? "Your e-mail address is confirmed. You can go back to the game." : "This link is not valid any more. Ask the game for a new confirmation e-mail.";
             return Results.Content($"<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>E-mail confirmation</title></head><body style=\"font-family:sans-serif;margin:2em\"><p>{message}</p></body></html>", "text/html; charset=utf-8", statusCode: userId != null ? 200 : 400);
+        });
+
+        // For the game server only (see AccountOptions.InternalKey): "whose session is this token, and what is in the armory?"
+        app.MapPost("/v1/internal/verify-session", async (VerifySessionRequest? req, HttpContext http, AccountStore store, AccountOptions options, TimeProvider clock) =>
+        {
+            if (options.InternalKey.Length == 0) return Results.NotFound();
+            string given = http.Request.Headers["X-Internal-Key"].ToString();
+            if (!System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+                    System.Text.Encoding.UTF8.GetBytes(given), System.Text.Encoding.UTF8.GetBytes(options.InternalKey)))
+                return Error(401, "unauthorized");
+            if (string.IsNullOrEmpty(req?.Token)) return Error(400, "invalid_token");
+            User? user = await store.FindSessionUser(Tokens.Hash(req.Token), clock.GetUtcNow());
+            if (user == null) return Error(401, "unauthorized");
+            (_, string json) = await store.GetProfile(user.Id);
+            string armory = JsonNode.Parse(json)?["armory"]?.GetValue<string>() ?? "";
+            return Results.Ok(new { userId = user.Id, displayName = user.DisplayName, armory });
         });
 
         var api = app.MapGroup("/v1");
