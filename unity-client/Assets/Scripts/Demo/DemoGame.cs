@@ -422,9 +422,8 @@ public sealed partial class DemoGame : MonoBehaviour
                 if (World.GetBuilding(id) == null) _removeBuffer.Add(id);
             foreach (int id in _removeBuffer)
             {
-                Fx.Explosion(_buildingObjects[id].transform.position, 5f);
                 Sfx.PlayAt(_buildingObjects[id].transform.position, "explosion_big", 1f, 0.15f);
-                Destroy(_buildingObjects[id]);
+                BuildingCollapse.Begin(_buildingObjects[id]); // explodes, sinks and removes itself
                 _buildingObjects.Remove(id);
                 changed = true;
             }

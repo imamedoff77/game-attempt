@@ -86,7 +86,7 @@ public static class Billing
             Call("buy", activity, productId);
     }
 
-    public static void QueryOwned() => Call("queryOwned");
+    public static void QueryOwned() { if (Ready) Call("queryOwned"); } // before Play is connected the "ready" event asks by itself
     public static void Consume(string token) => Call("consume", token);
 
     private sealed class Listener : AndroidJavaProxy
@@ -104,7 +104,7 @@ public static class Billing
             case "ready":
                 Ready = true;
                 LastError = "";
-                Call("queryProducts", new[] { ProductIds[0], ProductIds[1], ProductIds[2], ProductIds[3] });
+                Call("queryProducts", (object)ProductIds); // the cast keeps the whole array as ONE argument (params would spread it)
                 QueryOwned();
                 break;
             case "products":

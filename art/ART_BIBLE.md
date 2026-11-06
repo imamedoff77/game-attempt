@@ -78,3 +78,7 @@ Bütün səslər sıfırdan, kodla yaradılır (`art/audio/generate_sounds.py` �
 ## Minimap (2026-11-06)
 
 `DemoHud.Minimap.cs`: matçda sol altda kvadrat xəritə (ekran hündürlüyünün 30 %-i): relyef (qum/daşlı/qaya/su), binalar və vahidlər nöqtə kimi (mavi = sən, qırmızı = rəqib; oyunda duman yoxdur), kameranın gördüyü sahə ağ trapesiya çərçivə ilə. Toxunmaq/sürükləmək kameranı ora aparır (`RtsCamera.FocusOn`); düymə sahəsi toxunuş idarəsindən çıxarılıb (`ActiveRects`).
+
+## Bina çökməsi (2026-11-06)
+
+Məhv olan bina artıq dərhal yox olmur (`BuildingCollapse` in `BuildingFx.cs`): 1,6 saniyə ərzində yerə batır, yastılaşır, ilk partlayışdan sonra sahə boyu 4 kiçik partlayış olur və sonda bir az tüstü qalır. Telefonda yoxlanıb (HQ yastılaşır). Təlim bannerı da minimapın sağına köçürüldü (üst-üstə düşürdü).
