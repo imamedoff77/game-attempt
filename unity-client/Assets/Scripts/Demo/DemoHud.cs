@@ -69,16 +69,15 @@ public sealed partial class DemoHud : MonoBehaviour
         // Top-right: build menu button and simulation speed.
         Rect[] top = TopRects();
         GUI.enabled = !_game.Placing;
-        if (GUI.Button(top[0], Strings.Get(_menuOpen ? "menu.buildClose" : "menu.build"), _button)) _menuOpen = !_menuOpen;
+        if (IconButton(top[0], UiTheme.Icon.Build, Strings.Get(_menuOpen ? "menu.buildClose" : "menu.build"), _menuOpen)) _menuOpen = !_menuOpen;
         GUI.enabled = true;
         float[] speeds = _game.IsOfflineMatch ? SkirmishSpeeds : Speeds;
         for (int i = 0; i < speeds.Length && !_game.OnlineMatch; i++) // everybody plays at normal speed online
         {
-            string text = (_game.SimSpeed == speeds[i] ? "[x" + speeds[i] + "]" : "x" + speeds[i]);
-            if (GUI.Button(top[i + 1], text, _button)) _game.SimSpeed = speeds[i];
+            if (IconButton(top[i + 1], null, "x" + speeds[i], _game.SimSpeed == speeds[i])) _game.SimSpeed = speeds[i];
         }
         if (_game.IsOfflineMatch && _game.Outcome == DemoGame.GameOutcome.Playing)
-            if (GUI.Button(top[3], Strings.Get("button.pause"), _button)) _game.Paused = true;
+            if (IconButton(top[3], UiTheme.Icon.Pause, null)) _game.Paused = true;
         if (_game.OnlineMatch && _game.Outcome == DemoGame.GameOutcome.Playing)
         {
             // Giving up needs a second tap so a stray touch does not lose the match.
@@ -204,27 +203,7 @@ public sealed partial class DemoHud : MonoBehaviour
         Rect[] rects = PanelRects(PanelButtonCount(b));
         PlayerState me = world.Player(_game.LocalTeam);
 
-        string state = Strings.Get(b.Powered ? "panel.working" : "panel.noEnergy");
-        string text = Strings.Get("panel.title", Strings.BuildingName(b.Kind), b.UnderConstruction ? Strings.Get("panel.constructing", ConstructionPercent(b)) : state);
-        if (!b.UnderConstruction && units.Length > 0)
-        {
-            text += Strings.Get("panel.queue");
-            if (b.Queue.Count == 0) text += Strings.Get("panel.queueEmpty");
-            for (int i = 0; i < b.Queue.Count; i++)
-            {
-                if (i > 0) text += ", ";
-                text += Strings.UnitName(b.Queue[i]);
-                if (i == 0) text += $" {Percent(b)}%";
-            }
-        }
-        if (!b.UnderConstruction && b.Kind == BuildingKind.Hq)
-        {
-            text += me.Upgrading ? Strings.Get("panel.upgrading", UpgradePercent(me)) : Strings.Get("panel.baseLevel", me.BaseLevel);
-            if (me.Researching) text += Strings.Get("panel.researching", Strings.UpgradeName(me.ResearchKind), ResearchPercent(me));
-        }
-        GUI.Box(rects[0], "");
-        float inset = rects[0].height * 0.07f;
-        GUI.Label(new Rect(rects[0].x + inset * 1.5f, rects[0].y + inset, rects[0].width - inset * 3f, rects[0].height - inset * 2f), text, _label);
+        DrawBuildingInfo(rects[0], world, b, me);
 
         if (b.UnderConstruction)
         {
@@ -676,7 +655,7 @@ public sealed partial class DemoHud : MonoBehaviour
         float w = Screen.width * 0.34f;
         float x = Screen.width - w - gap;
         float y = gap * 2f + Screen.height * 0.09f;
-        float infoH = Screen.height * 0.17f;
+        float infoH = Screen.height * 0.15f;
         float buttonH = Screen.height * 0.1f;
 
         int count = 1 + buttonCount;

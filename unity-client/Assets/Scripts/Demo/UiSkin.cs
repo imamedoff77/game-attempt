@@ -5,6 +5,9 @@ public static class UiSkin
 {
     private static bool _applied;
 
+    /// <summary>Orange plate for a switched-on toggle (the current speed, for instance).</summary>
+    public static GUIStyle ActiveButton { get; private set; }
+
     public static void Apply()
     {
         if (_applied) return;
@@ -25,5 +28,9 @@ public static class UiSkin
         b.active.background = b.onActive.background = pressed;
         b.normal.textColor = b.hover.textColor = b.active.textColor = b.focused.textColor = UiTheme.Bone;
         b.onNormal.textColor = b.onHover.textColor = b.onActive.textColor = b.onFocused.textColor = UiTheme.Bone;
+
+        ActiveButton = new GUIStyle(b);
+        ActiveButton.normal.background = ActiveButton.hover.background = ActiveButton.focused.background = pressed;
+        ActiveButton.onNormal.background = ActiveButton.onHover.background = ActiveButton.onFocused.background = pressed;
     }
 }

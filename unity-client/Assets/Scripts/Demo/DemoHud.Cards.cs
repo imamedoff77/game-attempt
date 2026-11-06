@@ -70,4 +70,87 @@ public sealed partial class DemoHud
             UiTheme.IconLabel(new Rect(r.x + pad * 1.6f, r.y + r.height * 0.74f, r.width - pad * 3.2f, rowH), detailIcon, detail, new Color(UiTheme.Dim.r, UiTheme.Dim.g, UiTheme.Dim.b, a));
         return clicked;
     }
+
+    /// <summary>A toolbar button with an icon and/or text on its face. An active one is drawn on the orange plate.</summary>
+    private bool IconButton(Rect r, UiTheme.Icon? icon, string text, bool active = false)
+    {
+        bool clicked = GUI.Button(r, "", active ? UiSkin.ActiveButton : _button);
+        float a = GUI.enabled ? 1f : 0.5f;
+        Color color = active ? new Color(0.12f, 0.09f, 0.05f, a) : new Color(UiTheme.Bone.r, UiTheme.Bone.g, UiTheme.Bone.b, a);
+        UiTheme.CenteredLabel(r, icon, text, color);
+        return clicked;
+    }
+
+    private GUIStyle _infoTitle;
+    private GUIStyle _infoSmall;
+
+    /// <summary>The selected building's plate: name, a status line, queue slots with progress, and base info for the HQ.</summary>
+    private void DrawBuildingInfo(Rect r, World world, Building b, PlayerState me)
+    {
+        GUI.Box(r, "");
+        float pad = r.height * 0.07f;
+        float x = r.x + pad * 1.6f, w = r.width - pad * 3.2f;
+
+        int titleSize = Mathf.RoundToInt(r.height * 0.19f);
+        int smallSize = Mathf.RoundToInt(r.height * 0.14f);
+        if (_infoTitle == null || _infoTitle.fontSize != titleSize)
+        {
+            _infoTitle = new GUIStyle(GUI.skin.label) { fontSize = titleSize, fontStyle = FontStyle.Bold, wordWrap = false, clipping = TextClipping.Clip };
+            _infoSmall = new GUIStyle(GUI.skin.label) { fontSize = smallSize, fontStyle = FontStyle.Bold, wordWrap = false, clipping = TextClipping.Clip };
+        }
+        _infoTitle.normal.textColor = UiTheme.Bone;
+        GUI.Label(new Rect(x, r.y + pad, w * 0.62f, r.height * 0.26f), Strings.BuildingName(b.Kind), _infoTitle);
+
+        // Status on the right of the title line.
+        string status;
+        Color statusColor;
+        if (b.UnderConstruction) { status = Strings.Get("panel.constructing", ConstructionPercent(b)); statusColor = UiTheme.Accent; }
+        else if (!b.Powered) { status = Strings.Get("panel.noEnergy"); statusColor = UiTheme.Alert; }
+        else { status = Strings.Get("panel.working"); statusColor = UiTheme.Good; }
+        _infoSmall.alignment = TextAnchor.MiddleRight;
+        _infoSmall.normal.textColor = statusColor;
+        GUI.Label(new Rect(x + w * 0.45f, r.y + pad, w * 0.55f, r.height * 0.26f), status, _infoSmall);
+
+        // Queue slots.
+        UnitKind[] produces = Defs.Produces(b.Kind);
+        float y = r.y + r.height * 0.36f;
+        if (!b.UnderConstruction && produces.Length > 0)
+        {
+            const int slots = 5;
+            float gap = pad * 0.7f;
+            float sw = (w - gap * (slots - 1)) / slots, sh = r.height * 0.3f;
+            _infoSmall.alignment = TextAnchor.MiddleCenter;
+            for (int i = 0; i < slots; i++)
+            {
+                var slot = new Rect(x + i * (sw + gap), y, sw, sh);
+                Color old = GUI.color;
+                GUI.color = new Color(0.04f, 0.05f, 0.03f, 0.9f);
+                GUI.DrawTexture(slot, Texture2D.whiteTexture);
+                if (i < b.Queue.Count)
+                {
+                    if (i == 0)
+                    {
+                        GUI.color = UiTheme.Good;
+                        GUI.DrawTexture(new Rect(slot.x, slot.yMax - sh * 0.14f, slot.width * Percent(b) / 100f, sh * 0.14f), Texture2D.whiteTexture);
+                    }
+                    GUI.color = old;
+                    _infoSmall.normal.textColor = UiTheme.Bone;
+                    string name = Strings.UnitName(b.Queue[i]);
+                    GUI.Label(slot, name.Length > 6 ? name.Substring(0, 6) : name, _infoSmall);
+                }
+                GUI.color = old;
+                UiTheme.Outline(slot, i < b.Queue.Count ? UiTheme.Edge : new Color(0.25f, 0.27f, 0.2f, 1f), 1.5f);
+            }
+            y += sh + pad * 0.8f;
+        }
+
+        if (!b.UnderConstruction && b.Kind == BuildingKind.Hq)
+        {
+            string line = me.Upgrading ? Strings.Get("hud.upgrading", UpgradePercent(me)) : Strings.Get("hud.baseLevel", me.BaseLevel);
+            if (me.Researching) line = Strings.Get("panel.researching", Strings.UpgradeName(me.ResearchKind), ResearchPercent(me)).Trim();
+            _infoSmall.alignment = TextAnchor.MiddleLeft;
+            _infoSmall.normal.textColor = me.Upgrading || me.Researching ? UiTheme.Accent : UiTheme.Dim;
+            GUI.Label(new Rect(x, y, w, r.height * 0.2f), line, _infoSmall);
+        }
+    }
 }

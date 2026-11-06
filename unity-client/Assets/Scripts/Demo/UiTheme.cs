@@ -18,12 +18,13 @@ public static class UiTheme
     public static readonly Color Warn = new Color(0.93f, 0.74f, 0.24f, 1f);
     public static readonly Color Alert = new Color(0.86f, 0.31f, 0.25f, 1f);
 
-    public enum Icon { Resources, Energy, Units, Clock, Alert }
+    public enum Icon { Resources, Energy, Units, Clock, Alert, Build, Pause }
 
     private static Texture2D[] _icons;
     private static GUIStyle _chipText;
     private static GUIStyle _caption;
     private static GUIStyle _iconLabel;
+    private static GUIStyle _btnText;
     private static int _chipTextHeight;
 
     /// <summary>One status chip: plate, icon, value. An alert colour recolours the outline and the number.</summary>
@@ -68,6 +69,26 @@ public static class UiTheme
             _iconLabel = new GUIStyle(GUI.skin.label) { fontSize = fontSize, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft, wordWrap = false, clipping = TextClipping.Clip };
         _iconLabel.normal.textColor = color;
         GUI.Label(new Rect(r.x + size * 1.15f, r.y, r.width - size * 1.15f, r.height), text, _iconLabel);
+    }
+
+    /// <summary>An optional icon and text centred together in a rectangle (for button faces).</summary>
+    public static void CenteredLabel(Rect r, Icon? icon, string text, Color color)
+    {
+        int fontSize = Mathf.RoundToInt(r.height * 0.34f);
+        if (_btnText == null || _btnText.fontSize != fontSize)
+            _btnText = new GUIStyle(GUI.skin.label) { fontSize = fontSize, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft, wordWrap = false, clipping = TextClipping.Overflow };
+        _btnText.normal.textColor = color;
+        float size = r.height * 0.5f;
+        float textW = string.IsNullOrEmpty(text) ? 0f : _btnText.CalcSize(new GUIContent(text)).x;
+        float total = (icon.HasValue ? size : 0f) + (icon.HasValue && textW > 0f ? size * 0.3f : 0f) + textW;
+        float x = r.center.x - total / 2f;
+        if (icon.HasValue)
+        {
+            GUI.color = Color.white;
+            GUI.DrawTexture(new Rect(x, r.center.y - size / 2f, size, size), IconTexture(icon.Value));
+            x += size * 1.3f;
+        }
+        if (textW > 0f) GUI.Label(new Rect(x, r.y, textW + 4f, r.height), text, _btnText);
     }
 
     /// <summary>Text with a dark drop shadow so it reads over any ground.</summary>
@@ -137,7 +158,7 @@ public static class UiTheme
 
     private static Texture2D IconTexture(Icon icon)
     {
-        if (_icons == null) _icons = new Texture2D[5];
+        if (_icons == null) _icons = new Texture2D[7];
         Texture2D cached = _icons[(int)icon];
         if (cached != null) return cached;
 
@@ -148,6 +169,8 @@ public static class UiTheme
             case Icon.Energy: shader = BoltShader; break;
             case Icon.Units: shader = HelmetShader; break;
             case Icon.Alert: shader = AlertShader; break;
+            case Icon.Build: shader = CraneShader; break;
+            case Icon.Pause: shader = PauseShader; break;
             default: shader = ClockShader; break;
         }
         _icons[(int)icon] = Render(shader);
@@ -211,6 +234,24 @@ public static class UiTheme
         if (!dome && !brim) return Color.clear;
         if (p.y >= 0.34f && p.y <= 0.42f) return new Color(0.36f, 0.40f, 0.28f, 1f);
         return Bone;
+    }
+
+    /// <summary>Tower crane: post, arm and a hanging hook.</summary>
+    private static Color CraneShader(Vector2 p)
+    {
+        bool post = p.x > 0.16f && p.x < 0.30f && p.y > 0.08f && p.y < 0.90f;
+        bool foot = p.x > 0.08f && p.x < 0.38f && p.y > 0.08f && p.y < 0.16f;
+        bool arm = p.x > 0.16f && p.x < 0.92f && p.y > 0.76f && p.y < 0.88f;
+        bool rope = p.x > 0.74f && p.x < 0.80f && p.y > 0.44f && p.y < 0.78f;
+        bool hook = p.x > 0.66f && p.x < 0.88f && p.y > 0.32f && p.y < 0.46f;
+        return post || foot || arm || rope || hook ? Bone : Color.clear;
+    }
+
+    /// <summary>Two vertical bars.</summary>
+    private static Color PauseShader(Vector2 p)
+    {
+        bool bars = p.y > 0.18f && p.y < 0.82f && ((p.x > 0.24f && p.x < 0.42f) || (p.x > 0.58f && p.x < 0.76f));
+        return bars ? Bone : Color.clear;
     }
 
     /// <summary>Warning triangle with an exclamation mark.</summary>
