@@ -18,6 +18,7 @@ public sealed partial class DemoHud : MonoBehaviour
     private GUIStyle _label;
     private GUIStyle _stats;
     private GUIStyle _button;
+    private GUIStyle _timerStyle;
     private Texture2D _boltIcon;
     private bool _menuOpen;
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
@@ -167,15 +168,18 @@ public sealed partial class DemoHud : MonoBehaviour
     private void DrawBuildMenu(World world)
     {
         Rect[] items = MenuRects();
+        PlayerState me = world.Player(_game.LocalTeam);
         for (int i = 0; i < Buildable.Length; i++)
         {
             BuildingKind kind = Buildable[i];
             BuildingDef def = Defs.Building(kind);
-            PlayerState me = world.Player(_game.LocalTeam);
             bool locked = me.BaseLevel < def.RequiredLevel;
-            GUI.enabled = !locked && me.Resources >= def.Cost;
-            string detail = locked ? Strings.Get("menu.needsLevel", def.RequiredLevel) : Describe(world, _game.LocalTeam, kind, def);
-            if (GUI.Button(items[i], $"{Strings.BuildingName(kind)}  -  {def.Cost}\n{detail}", _button))
+            int owned = 0;
+            foreach (Building b in world.Buildings)
+                if (b.Team == _game.LocalTeam && b.Kind == kind) owned++;
+            string problem = locked ? Strings.Get("card.locked", def.RequiredLevel) : null;
+            if (Card(items[i], Strings.BuildingName(kind), def.Cost, UiTheme.Icon.Energy, Describe(world, _game.LocalTeam, kind, def),
+                     !locked && me.Resources >= def.Cost, owned > 0 ? Strings.Get("card.owned", owned) : null, problem))
             {
                 _menuOpen = false;
                 _game.BeginPlacement(kind);
@@ -188,9 +192,9 @@ public sealed partial class DemoHud : MonoBehaviour
     {
         switch (kind)
         {
-            case BuildingKind.PowerPlant: return Strings.Get("menu.energyPlus", world.NextOutput(kind, team));
-            case BuildingKind.SupplyCenter: return Strings.Get("menu.energyMinusIncome", def.EnergyUse, world.NextOutput(kind, team));
-            default: return Strings.Get("menu.energyMinus", def.EnergyUse);
+            case BuildingKind.PowerPlant: return Strings.Get("card.energyPlus", world.NextOutput(kind, team));
+            case BuildingKind.SupplyCenter: return Strings.Get("card.energyMinusIncome", def.EnergyUse, world.NextOutput(kind, team));
+            default: return Strings.Get("card.energyMinus", def.EnergyUse);
         }
     }
 
@@ -219,7 +223,8 @@ public sealed partial class DemoHud : MonoBehaviour
             if (me.Researching) text += Strings.Get("panel.researching", Strings.UpgradeName(me.ResearchKind), ResearchPercent(me));
         }
         GUI.Box(rects[0], "");
-        GUI.Label(rects[0], text, _label);
+        float inset = rects[0].height * 0.07f;
+        GUI.Label(new Rect(rects[0].x + inset * 1.5f, rects[0].y + inset, rects[0].width - inset * 3f, rects[0].height - inset * 2f), text, _label);
 
         if (b.UnderConstruction)
         {
@@ -228,19 +233,22 @@ public sealed partial class DemoHud : MonoBehaviour
             return;
         }
 
+        Rect[] cards = CardRects(units.Length);
         for (int i = 0; i < units.Length; i++)
         {
             UnitDef ud = Defs.Unit(units[i]);
             QueueCheck check = world.CheckQueue(b, units[i]);
-            GUI.enabled = check == QueueCheck.Ok;
-            string extra = check == QueueCheck.QueueFull ? Strings.Get("panel.queueFull")
-                         : check == QueueCheck.PopCapReached ? Strings.Get("panel.popFull")
-                         : check == QueueCheck.LevelTooLow ? Strings.Get("panel.needsLevel", ud.RequiredLevel) : "";
-            if (GUI.Button(rects[1 + i], Strings.Get("panel.unitButton", Strings.UnitName(units[i]), ud.Cost, ud.BuildSeconds, extra), _button))
+            string problem = check == QueueCheck.QueueFull ? Strings.Get("card.queueFull")
+                           : check == QueueCheck.PopCapReached ? Strings.Get("card.popFull")
+                           : check == QueueCheck.LevelTooLow ? Strings.Get("card.locked", ud.RequiredLevel) : null;
+            int queued = 0;
+            foreach (UnitKind k in b.Queue) if (k == units[i]) queued++;
+            if (Card(cards[i], Strings.UnitName(units[i]), ud.Cost, UiTheme.Icon.Clock, Strings.Get("card.seconds", ud.BuildSeconds),
+                     check == QueueCheck.Ok, queued > 0 ? Strings.Get("card.queued", queued) : null, problem))
                 _game.QueueUnit(units[i]);
         }
 
-        int next = 1 + units.Length;
+        int next = 1;
         if (units.Length > 0)
         {
             GUI.enabled = b.Queue.Count > 0;
@@ -282,7 +290,7 @@ public sealed partial class DemoHud : MonoBehaviour
     {
         if (b.UnderConstruction) return 1;
         int units = Defs.Produces(b.Kind).Length;
-        int count = units == 0 ? 0 : units + 2;
+        int count = units == 0 ? 0 : 2; // cancel last + rally; the unit cards sit in the bottom row
         if (b.Kind == BuildingKind.Hq) count += 1 + Defs.UpgradeCount;
         return count;
     }
@@ -310,23 +318,46 @@ public sealed partial class DemoHud : MonoBehaviour
         return Mathf.Min(100, b.Progress * 100 / total);
     }
 
-    /// <summary>A small progress bar over every building that is producing something.</summary>
+    /// <summary>A progress bar with the time left over every building of yours that is being built or is producing.</summary>
     private void DrawProductionBars(World world)
     {
         if (_game.Cam == null) return;
-        float w = Screen.height * 0.12f, h = Screen.height * 0.014f;
+        float w = Screen.height * 0.17f, h = Screen.height * 0.022f;
+        int textSize = Mathf.RoundToInt(h * 1.35f);
+        if (_timerStyle == null || _timerStyle.fontSize != textSize)
+            _timerStyle = new GUIStyle(GUI.skin.label) { fontSize = textSize, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, wordWrap = false, clipping = TextClipping.Overflow };
         foreach (Building b in world.Buildings)
         {
             if ((b.Queue.Count == 0 && !b.UnderConstruction) || b.Team != _game.LocalTeam) continue;
             Vector3 sp = _game.Cam.Camera.WorldToScreenPoint(new Vector3(b.X + b.Width / 2f, 0.2f, b.Y + b.Height / 2f));
             if (sp.z <= 0f) continue;
+
+            float fraction;
+            int ticksLeft;
+            if (b.UnderConstruction)
+            {
+                fraction = ConstructionPercent(b) / 100f;
+                ticksLeft = b.ConstructionTicks - b.BuildProgress;
+            }
+            else
+            {
+                fraction = Percent(b) / 100f;
+                ticksLeft = Defs.Unit(b.Queue[0]).BuildSeconds * World.TicksPerSecond - b.Progress;
+            }
+            int secs = Mathf.Max(0, Mathf.CeilToInt(ticksLeft / (float)World.TicksPerSecond));
+            Color fill = b.UnderConstruction ? UiTheme.Accent : b.Powered ? UiTheme.Good : UiTheme.Warn;
+
             var back = new Rect(sp.x - w / 2f, Screen.height - sp.y - h / 2f, w, h);
             Color old = GUI.color;
-            GUI.color = new Color(0f, 0f, 0f, 0.7f);
-            GUI.DrawTexture(back, Texture2D.whiteTexture);
-            GUI.color = b.UnderConstruction ? new Color(0.35f, 0.7f, 1f) : b.Powered ? new Color(0.3f, 0.9f, 0.4f) : new Color(0.9f, 0.7f, 0.2f);
-            GUI.DrawTexture(new Rect(back.x, back.y, back.width * (b.UnderConstruction ? ConstructionPercent(b) : Percent(b)) / 100f, back.height), Texture2D.whiteTexture);
+            GUI.color = new Color(0.06f, 0.07f, 0.05f, 0.85f);
+            GUI.DrawTexture(new Rect(back.x - 2f, back.y - 2f, back.width + 4f, back.height + 4f), Texture2D.whiteTexture);
+            GUI.color = fill;
+            GUI.DrawTexture(new Rect(back.x, back.y, back.width * fraction, back.height), Texture2D.whiteTexture);
             GUI.color = old;
+
+            string label = $"{secs / 60}:{secs % 60:00}";
+            if (!b.UnderConstruction && b.Queue.Count > 1) label += $"  x{b.Queue.Count}";
+            UiTheme.ShadowLabel(new Rect(back.x, back.y - h * 1.7f, back.width, h * 1.6f), label, _timerStyle, Color.white);
         }
     }
 
@@ -628,7 +659,11 @@ public sealed partial class DemoHud : MonoBehaviour
         if (_menuOpen && !_game.Placing)
             foreach (Rect r in MenuRects()) yield return r;
         if (_game.SelectedBuilding != null && !_game.Placing)
+        {
             foreach (Rect r in PanelRects(PanelButtonCount(_game.SelectedBuilding))) yield return r;
+            if (!_game.SelectedBuilding.UnderConstruction)
+                foreach (Rect r in CardRects(Defs.Produces(_game.SelectedBuilding.Kind).Length)) yield return r;
+        }
         if (_chatOpen) yield return ChatPanelRect();
         if (_game.Paused) yield return PauseCardRect();
         if ((_game.IsOfflineMatch || _game.OnlineMatch) && _game.Outcome != DemoGame.GameOutcome.Playing) yield return EndCardRect();
@@ -686,19 +721,7 @@ public sealed partial class DemoHud : MonoBehaviour
         return rects;
     }
 
-    private static Rect[] MenuRects()
-    {
-        float h = Screen.height * 0.1f;
-        float gap = Screen.height * 0.015f;
-        float w = Screen.width * 0.34f;
-        float x = Screen.width - w - gap;
-        float y = gap * 2f + Screen.height * 0.09f;
-
-        var rects = new Rect[Buildable.Length];
-        for (int i = 0; i < rects.Length; i++)
-            rects[i] = new Rect(x, y + i * (h + gap), w, h);
-        return rects;
-    }
+    private Rect[] MenuRects() => CardRects(Buildable.Length);
 
     // ---------------------------------------------------------------- resources
 

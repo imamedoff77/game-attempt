@@ -18,11 +18,12 @@ public static class UiTheme
     public static readonly Color Warn = new Color(0.93f, 0.74f, 0.24f, 1f);
     public static readonly Color Alert = new Color(0.86f, 0.31f, 0.25f, 1f);
 
-    public enum Icon { Resources, Energy, Units, Clock }
+    public enum Icon { Resources, Energy, Units, Clock, Alert }
 
     private static Texture2D[] _icons;
     private static GUIStyle _chipText;
     private static GUIStyle _caption;
+    private static GUIStyle _iconLabel;
     private static int _chipTextHeight;
 
     /// <summary>One status chip: plate, icon, value. An alert colour recolours the outline and the number.</summary>
@@ -53,6 +54,32 @@ public static class UiTheme
         float width = _caption.CalcSize(new GUIContent(text)).x + r.height * 0.9f;
         GUI.Box(new Rect(r.x, r.y, width, r.height), "");
         GUI.Label(new Rect(r.x + r.height * 0.45f, r.y, width, r.height), text, _caption);
+    }
+
+    /// <summary>A small icon followed by text, vertically centred in the rectangle.</summary>
+    public static void IconLabel(Rect r, Icon icon, string text, Color color)
+    {
+        float size = r.height * 0.9f;
+        GUI.color = new Color(1f, 1f, 1f, color.a);
+        GUI.DrawTexture(new Rect(r.x, r.y + (r.height - size) / 2f, size, size), IconTexture(icon));
+        GUI.color = Color.white;
+        int fontSize = Mathf.RoundToInt(r.height * 0.78f);
+        if (_iconLabel == null || _iconLabel.fontSize != fontSize)
+            _iconLabel = new GUIStyle(GUI.skin.label) { fontSize = fontSize, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft, wordWrap = false, clipping = TextClipping.Clip };
+        _iconLabel.normal.textColor = color;
+        GUI.Label(new Rect(r.x + size * 1.15f, r.y, r.width - size * 1.15f, r.height), text, _iconLabel);
+    }
+
+    /// <summary>Text with a dark drop shadow so it reads over any ground.</summary>
+    public static void ShadowLabel(Rect r, string text, GUIStyle style, Color color)
+    {
+        Color old = style.normal.textColor;
+        style.normal.textColor = new Color(0f, 0f, 0f, 0.85f * color.a);
+        float o = Mathf.Max(1f, style.fontSize * 0.07f);
+        GUI.Label(new Rect(r.x + o, r.y + o, r.width, r.height), text, style);
+        style.normal.textColor = color;
+        GUI.Label(r, text, style);
+        style.normal.textColor = old;
     }
 
     /// <summary>A thin coloured frame inside a rectangle.</summary>
@@ -110,7 +137,7 @@ public static class UiTheme
 
     private static Texture2D IconTexture(Icon icon)
     {
-        if (_icons == null) _icons = new Texture2D[4];
+        if (_icons == null) _icons = new Texture2D[5];
         Texture2D cached = _icons[(int)icon];
         if (cached != null) return cached;
 
@@ -120,6 +147,7 @@ public static class UiTheme
             case Icon.Resources: shader = CrateShader; break;
             case Icon.Energy: shader = BoltShader; break;
             case Icon.Units: shader = HelmetShader; break;
+            case Icon.Alert: shader = AlertShader; break;
             default: shader = ClockShader; break;
         }
         _icons[(int)icon] = Render(shader);
@@ -183,6 +211,16 @@ public static class UiTheme
         if (!dome && !brim) return Color.clear;
         if (p.y >= 0.34f && p.y <= 0.42f) return new Color(0.36f, 0.40f, 0.28f, 1f);
         return Bone;
+    }
+
+    /// <summary>Warning triangle with an exclamation mark.</summary>
+    private static Color AlertShader(Vector2 p)
+    {
+        Vector2[] tri = { new Vector2(0.5f, 0.92f), new Vector2(0.06f, 0.12f), new Vector2(0.94f, 0.12f) };
+        if (!InPolygon(tri, p)) return Color.clear;
+        bool bar = Mathf.Abs(p.x - 0.5f) < 0.06f && p.y > 0.36f && p.y < 0.68f;
+        bool dot = (p - new Vector2(0.5f, 0.26f)).magnitude < 0.07f;
+        return bar || dot ? new Color(0.14f, 0.12f, 0.08f, 1f) : Alert;
     }
 
     /// <summary>Clock face: ring with two hands.</summary>
