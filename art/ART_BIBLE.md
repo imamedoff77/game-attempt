@@ -69,8 +69,12 @@ Rəssam işi olmadan, yalnız kodla əlavə olunanlar (hamısı telefonda yoxlan
 - **İnterfeys örtüyü** (`UiSkin.cs`): bütün düymə və panellər yuvarlaq tünd-mavi üslubda (prosedural 9-hissəli teksturalar), resurs və missiya panelləri fonlu.
 - **Xəritə kənarı**: yer rəngi xəritədən 24 xana kənara davam edir (ən yaxın kənar xananı izləyir, çay davam edir), 12 xana enində seyrək qaya/kaktus/kol; qara boşluq yoxdur.
 
-Hələ yoxdur (Faza 7): real modellər/animasiya klipləri, səs və musiqi, soft şəffaf tüstü, minimap, bina məhv olma anımasiyası (dağıntı).
+Hələ yoxdur (Faza 7): real modellər/animasiya klipləri, səs və musiqi, soft şəffaf tüstü, bina məhv olma anımasiyası (dağıntı).
 
 ## Səs (2026-11-05)
 
 Bütün səslər sıfırdan, kodla yaradılır (`art/audio/generate_sounds.py` → `unity-client/Assets/Resources/Audio/*.wav`, lisenziya problemi yoxdur): 3 tüfəng səsi, top, raket, kiçik/böyük partlayış, klik, bina qoyma, vahid hazır, qələbə, məğlubiyyət, xəbərdarlıq (hələ istifadə olunmur) və 48 saniyəlik tünd ambient musiqi dövrəsi. Unity tərəfi `Sfx.cs`: 14 səs mənbəsi növbə ilə, eyni səs üçün minimum fasilə, ekrandan kənar səs 0,3 qat. Menyuda və pauzada "Sound: ON/OFF" (PlayerPrefs). Quraşdırıldı, çökmə və xəta yoxdur; səsin keyfiyyətini mən eşidə bilmirəm, rəy lazımdır. Yenidən yaratmaq: `python3 art/audio/generate_sounds.py unity-client/Assets/Resources/Audio`.
+
+## Minimap (2026-11-06)
+
+`DemoHud.Minimap.cs`: matçda sol altda kvadrat xəritə (ekran hündürlüyünün 30 %-i): relyef (qum/daşlı/qaya/su), binalar və vahidlər nöqtə kimi (mavi = sən, qırmızı = rəqib; oyunda duman yoxdur), kameranın gördüyü sahə ağ trapesiya çərçivə ilə. Toxunmaq/sürükləmək kameranı ora aparır (`RtsCamera.FocusOn`); düymə sahəsi toxunuş idarəsindən çıxarılıb (`ActiveRects`).

@@ -46,7 +46,7 @@ public static class Endpoints
     private static string CleanName(string? name, string fallback)
     {
         string cleaned = new string((name ?? "").Where(c => !char.IsControl(c)).ToArray()).Trim();
-        if (cleaned.Length == 0) cleaned = fallback;
+        if (cleaned.Length == 0 || NameFilter.IsBlocked(cleaned)) cleaned = NameFilter.IsBlocked(fallback) ? "Player" : fallback;
         return cleaned.Length > MaxDisplayName ? cleaned[..MaxDisplayName] : cleaned;
     }
 
@@ -261,6 +261,7 @@ public static class Endpoints
             User? user = await Authenticate(http, store, clock);
             if (user == null) return Error(401, "unauthorized");
             if (string.IsNullOrWhiteSpace(req?.DisplayName)) return Error(400, "invalid_name");
+            if (NameFilter.IsBlocked(req.DisplayName)) return Error(400, "name_not_allowed");
             await store.SetDisplayName(user.Id, CleanName(req.DisplayName, user.DisplayName));
             return Results.Ok(UserDto((await store.GetById(user.Id))!));
         });

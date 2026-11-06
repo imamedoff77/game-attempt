@@ -64,6 +64,31 @@ public class AuthTests
         Assert.Equal("fallback", (await TestServer.Json(await s.Get("/v1/me", fallback))).GetProperty("displayName").GetString());
     }
 
+    [Theory]
+    [InlineData("f.u.c.k you", true)]
+    [InlineData("SH1T", true)]
+    [InlineData("fuuuuck", true)]
+    [InlineData("Sikt1r", true)]
+    [InlineData("ass", true)]
+    [InlineData("Assassin", false)]
+    [InlineData("Scunthorpe", false)]
+    [InlineData("Class Act", false)]
+    [InlineData("Ace", false)]
+    public void NameFilter_BlocksTheObviousAndNotInnocentNames(string name, bool blocked) => Assert.Equal(blocked, NameFilter.IsBlocked(name));
+
+    [Fact]
+    public async Task BlockedDisplayName_IsReplacedAtSignUpAndRefusedOnRename()
+    {
+        await using TestServer s = await TestServer.StartAsync();
+        string token = await s.Register("clean.person@example.com", "correct horse", "Sh1thead");
+        Assert.Equal("clean.person", (await TestServer.Json(await s.Get("/v1/me", token))).GetProperty("displayName").GetString());
+
+        HttpResponseMessage refused = await s.Put("/v1/me", new { displayName = "f u c k" }, token);
+        Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
+        Assert.Equal("name_not_allowed", (await TestServer.Json(refused)).GetProperty("error").GetString());
+        Assert.Equal(HttpStatusCode.OK, (await s.Put("/v1/me", new { displayName = "Ace" }, token)).StatusCode);
+    }
+
     [Fact]
     public async Task Login_Works_AndFailsTheSameWayForWrongPasswordAndUnknownEmail()
     {

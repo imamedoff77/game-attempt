@@ -11,8 +11,8 @@
 ## Buraxılışdan əvvəl (Claude)
 
 - [ ] Server ünvanları: `AccountSettings.ReleaseUrl` və oyun serveri ünvanı (hazırda yer tutucu `https://accounts.invalid`); hostinq seçiləndən sonra doldurulur, HTTPS (Caddy/nginx) ilə.
-- [ ] Hostinq sənədi: hesab serveri + oyun serveri + PostgreSQL üçün systemd/Docker qaydası, yedəkləmə (`pg_dump` gündəlik), monitorinq. Server ayda ~5–10 USD VPS-də başlaya bilər.
-- [ ] Təhqiramiz displayName üçün söyüş filtri və "report" (FAZA_5 5.5c-2).
+- [x] Hostinq sənədi: `server/HOSTING.md` (publish, PostgreSQL + gündəlik yedək, systemd, Caddy HTTPS, firewall). **[İSTİFADƏÇİ]** VPS və domen alır, Claude SSH ilə quraşdırır.
+- [x] Təhqiramiz displayName filtri (FAZA_5 5.5c-2); hesabat düyməsi yoxdur, dəstək e-poçtu ilə.
 - [ ] Zəif telefonda (A34-dən zəif) performans ölçməsi, FPS/RAM; lazım gələrsə grafika səviyyəsi.
 - [ ] Ekran görüntüləri və mağaza mətni (Claude yazır, görüntüləri telefondan çəkir): qısa təsvir (80 simvol), tam təsvir, 512×512 ikon, 1024×500 qrafik. İkon və qrafik üçün real art lazımdır (Faza 7).
 - [ ] Real art/animasiya/səs (Faza 7): hazırda prosedur modellər və səslər. İstifadəçi "normal qrafikalar olanda" sınaqdan keçirəcək.

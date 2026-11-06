@@ -113,6 +113,7 @@ public sealed partial class DemoHud : MonoBehaviour
             if (GUI.Button(r[2], Strings.Get("button.clear"), _button)) _game.ClearSelection();
         }
 
+        if (MinimapVisible) DrawMinimap(world);
         DrawOutcome();
         DrawOnlineBanner();
         if (_game.IsOfflineMatch) DrawMatchClock();
@@ -627,6 +628,7 @@ public sealed partial class DemoHud : MonoBehaviour
     {
         foreach (Rect r in TopRects()) yield return r;
         foreach (Rect r in BottomRects()) yield return r;
+        if (MinimapVisible) yield return MinimapRect();
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
         if (_debug != null)
             foreach (Rect r in _debug.ActiveRects()) yield return r;
