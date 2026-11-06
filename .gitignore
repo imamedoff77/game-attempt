@@ -50,3 +50,6 @@ unity-client/Assets/Resources/googleclient.txt
 unity-client/Assets/Resources/googleclient.txt.meta
 unity-client/Assets/Resources/gameserver.txt
 unity-client/Assets/Resources/gameserver.txt.meta
+
+# private reference screenshots of other games (study only, never committed)
+art/reference-private/

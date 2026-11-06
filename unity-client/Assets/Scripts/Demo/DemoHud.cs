@@ -116,7 +116,6 @@ public sealed partial class DemoHud : MonoBehaviour
         if (MinimapVisible) DrawMinimap(world);
         DrawOutcome();
         DrawOnlineBanner();
-        if (_game.IsOfflineMatch) DrawMatchClock();
         if (_game.Mode == DemoGame.GameMode.Campaign) DrawMissionHud();
         if (_game.TutorialStep >= 0 && !_game.Paused && _game.Outcome == DemoGame.GameOutcome.Playing) DrawTutorial();
         if (_game.Paused) DrawPauseDialog();
@@ -134,35 +133,35 @@ public sealed partial class DemoHud : MonoBehaviour
 
     // ---------------------------------------------------------------- drawing
 
+    /// <summary>Top-left status bar: resources, energy, units and the match clock as four chips, with a caption under them.</summary>
     private void DrawStats(World world)
     {
-        float pad = Screen.height * 0.02f;
-        float line = Screen.height * 0.055f;
-
-        GUI.Box(new Rect(pad * 0.5f, pad * 0.5f, Screen.width * 0.34f, line * 3f + pad), "");
         PlayerState me = world.Player(_game.LocalTeam);
-        string resources = Strings.Get("hud.resources", me.Resources, me.IncomePerMinute);
-        string energy = Strings.Get("hud.energy", me.EnergyUsed, me.EnergyCapacity);
-        GUI.Label(new Rect(pad, pad, Screen.width * 0.5f, line), resources, _stats);
+        float pad = Screen.height * 0.015f;
+        float h = Screen.height * 0.085f;
+        float w = Screen.width * 0.095f;
+        float gap = Screen.height * 0.01f;
+        float x = pad, y = pad;
 
-        GUIStyle energyStyle = _stats;
-        if (me.EnergyShortage)
-        {
-            energyStyle = new GUIStyle(_stats);
-            energyStyle.normal.textColor = new Color(1f, 0.4f, 0.35f);
-            energy += Strings.Get("hud.energyShortage");
-        }
-        GUI.Label(new Rect(pad, pad + line, Screen.width * 0.5f, line), energy, energyStyle);
+        UiTheme.Chip(new Rect(x, y, w * 1.05f, h), UiTheme.Icon.Resources, me.Resources.ToString());
+        x += w * 1.05f + gap;
 
-        string pop = Strings.Get("hud.pop", me.PopUsed, me.PopCap, me.BaseLevel);
-        if (me.Upgrading) pop += Strings.Get("hud.upgrading", UpgradePercent(me));
-        GUIStyle popStyle = _stats;
-        if (me.PopUsed >= me.PopCap)
-        {
-            popStyle = new GUIStyle(_stats);
-            popStyle.normal.textColor = new Color(1f, 0.85f, 0.4f);
-        }
-        GUI.Label(new Rect(pad, pad + line * 2f, Screen.width * 0.6f, line), pop, popStyle);
+        bool shortage = me.EnergyShortage;
+        UiTheme.Chip(new Rect(x, y, w * 1.4f, h), UiTheme.Icon.Energy, $"{me.EnergyUsed}/{me.EnergyCapacity}", shortage ? UiTheme.Alert : (Color?)null);
+        x += w * 1.4f + gap;
+
+        bool full = me.PopUsed >= me.PopCap;
+        UiTheme.Chip(new Rect(x, y, w, h), UiTheme.Icon.Units, $"{me.PopUsed}/{me.PopCap}", full ? UiTheme.Warn : (Color?)null);
+        x += w + gap;
+
+        int secs = Mathf.RoundToInt(_game.MatchSeconds);
+        UiTheme.Chip(new Rect(x, y, w, h), UiTheme.Icon.Clock, $"{secs / 60}:{secs % 60:00}");
+
+        string caption = Strings.Get("hud.caption", me.IncomePerMinute, me.BaseLevel);
+        Color captionColor = UiTheme.Dim;
+        if (shortage) { caption = Strings.Get("hud.energyShortage"); captionColor = UiTheme.Alert; }
+        else if (me.Upgrading) { caption = Strings.Get("hud.upgrading", UpgradePercent(me)); captionColor = UiTheme.Accent; }
+        UiTheme.Caption(new Rect(pad, y + h + gap, Screen.width * 0.4f, Screen.height * 0.045f), caption, captionColor);
     }
 
     private void DrawBuildMenu(World world)
@@ -429,13 +428,6 @@ public sealed partial class DemoHud : MonoBehaviour
         float gap = card.height * 0.03f, h = card.height * 0.16f, w = (card.width - gap * 3f) / 2f;
         float y = card.yMax - h - gap;
         return new[] { new Rect(card.x + gap, y, w, h), new Rect(card.x + gap * 2f + w, y, w, h) };
-    }
-
-    private void DrawMatchClock()
-    {
-        int secs = Mathf.RoundToInt(_game.MatchSeconds);
-        var style = new GUIStyle(_stats) { alignment = TextAnchor.UpperCenter };
-        GUI.Label(new Rect(Screen.width * 0.3f, Screen.height * 0.02f, Screen.width * 0.2f, Screen.height * 0.06f), $"{secs / 60}:{(secs % 60):00}", style);
     }
 
     private void DrawPauseDialog()
@@ -716,9 +708,9 @@ public sealed partial class DemoHud : MonoBehaviour
         if (_label != null) return;
         int size = Mathf.RoundToInt(Screen.height * 0.032f);
         _label = new GUIStyle(GUI.skin.label) { fontSize = size };
-        _label.normal.textColor = Color.white;
+        _label.normal.textColor = UiTheme.Bone;
         _stats = new GUIStyle(GUI.skin.label) { fontSize = Mathf.RoundToInt(Screen.height * 0.042f), fontStyle = FontStyle.Bold };
-        _stats.normal.textColor = Color.white;
+        _stats.normal.textColor = UiTheme.Bone;
         _button = new GUIStyle(GUI.skin.button) { fontSize = size, wordWrap = true };
     }
 

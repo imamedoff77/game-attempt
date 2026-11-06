@@ -18,11 +18,9 @@
   "building.RepairStation": "Repair station",
   "building.Tower": "Defence tower",
 
-  "hud.resources": "Resources {0}  (+{1}/min)",
-  "hud.energy": "Energy {0}/{1}",
-  "hud.energyShortage": "  - SHORTAGE!",
-  "hud.pop": "Units {0}/{1}  (base level {2})",
-  "hud.upgrading": "  - upgrading {0}%",
+  "hud.caption": "+{0}/min  -  base level {1}",
+  "hud.energyShortage": "POWER SHORTAGE: buildings are offline",
+  "hud.upgrading": "Upgrading base: {0}%",
 
   "menu.build": "Build",
   "menu.needsLevel": "Needs base level {0}",
