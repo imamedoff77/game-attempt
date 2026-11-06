@@ -9,8 +9,8 @@ public sealed partial class DemoHud
     private void DrawOnlinePage()
     {
         float w = Screen.width, h = Screen.height;
-        var title = new GUIStyle(_stats) { alignment = TextAnchor.MiddleCenter, fontSize = Mathf.RoundToInt(h * 0.08f) };
-        GUI.Label(new Rect(0f, h * 0.03f, w, h * 0.12f), Strings.Get("online.title"), title);
+        DrawPageTitle(Strings.Get("online.title"));
+        GUI.Box(new Rect(w * 0.12f, h * 0.15f, w * 0.76f, h * 0.7f), "");
 
         var text = new GUIStyle(_label) { alignment = TextAnchor.MiddleCenter, wordWrap = true, fontSize = Mathf.RoundToInt(h * 0.04f) };
         Rect body = new Rect(w * 0.2f, h * 0.2f, w * 0.6f, h * 0.12f);
@@ -51,11 +51,11 @@ public sealed partial class DemoHud
             }
             else
             {
-                var note = new Rect(w * 0.15f, h * 0.13f, w * 0.7f, h * 0.11f);
+                var note = new Rect(w * 0.15f, h * 0.16f, w * 0.7f, h * 0.11f);
                 if (online != null) // the last attempt ended: say why
                 {
                     var error = new GUIStyle(text);
-                    error.normal.textColor = new Color(1f, 0.55f, 0.5f);
+                    error.normal.textColor = UiTheme.Alert;
                     GUI.Label(note, online.Status, error);
                 }
                 else GUI.Label(note, Strings.Get("online.intro"), text);
@@ -88,7 +88,7 @@ public sealed partial class DemoHud
         }
 
         var back = new Rect(w * 0.04f, h - h * 0.14f, w * 0.1f, h * 0.1f);
-        if (GUI.Button(back, Strings.Get("menu.back"), _button)) { _game.LeaveOnline(); _page = MenuPage.Main; }
+        if (IconButton(back, null, Strings.Get("menu.back"))) { _game.LeaveOnline(); _page = MenuPage.Main; }
     }
 }
 

@@ -68,38 +68,52 @@ public sealed partial class DemoHud
     private void DrawCampaignList()
     {
         CampaignProgress progress = _game.Progress;
-        var title = new GUIStyle(_stats) { alignment = TextAnchor.MiddleCenter, fontSize = Mathf.RoundToInt(Screen.height * 0.08f) };
-        GUI.Label(new Rect(0f, Screen.height * 0.03f, Screen.width, Screen.height * 0.12f), Strings.Get("campaign.title"), title);
-        var sub = new GUIStyle(_label) { alignment = TextAnchor.MiddleCenter };
-        GUI.Label(new Rect(0f, Screen.height * 0.14f, Screen.width, Screen.height * 0.06f),
-            Strings.Get("campaign.total", progress.TotalStars, Campaign.Missions.Count * 3, progress.Credits), sub);
+        DrawPageTitle(Strings.Get("campaign.title"));
+        DrawPageChips(progress.TotalStars + "/" + Campaign.Missions.Count * 3, progress.Credits.ToString());
 
         Rect[] tiles = MissionTiles();
-        var number = new GUIStyle(_stats) { alignment = TextAnchor.UpperCenter };
-        var name = new GUIStyle(_label) { alignment = TextAnchor.MiddleCenter, wordWrap = true };
+        int numSize = Mathf.RoundToInt(Screen.height * 0.07f);
+        var number = new GUIStyle(_stats) { alignment = TextAnchor.MiddleCenter, fontSize = numSize };
+        var name = new GUIStyle(_label) { alignment = TextAnchor.MiddleCenter, wordWrap = true, fontStyle = FontStyle.Bold };
         for (int i = 0; i < tiles.Length; i++)
         {
             int mission = i + 1;
             bool open = progress.IsUnlocked(mission);
+            int stars = progress.Stars(mission);
             Rect r = tiles[i];
-            GUI.enabled = open;
-            if (GUI.Button(r, "", _button)) { _briefingMission = mission; _page = MenuPage.Briefing; }
-            GUI.enabled = true;
+            bool clicked = false;
+            if (open) clicked = GUI.Button(r, "", _button);
+            else GUI.Box(r, "");
+            if (clicked) { _briefingMission = mission; _page = MenuPage.Briefing; }
 
-            GUI.Label(new Rect(r.x, r.y + r.height * 0.04f, r.width, r.height * 0.3f), mission.ToString(), number);
+            // stripe: green = three stars, orange = open, grey = locked
+            Color stripe = !open ? UiTheme.Edge : stars >= 3 ? UiTheme.Good : UiTheme.Accent;
+            Color old = GUI.color;
+            GUI.color = stripe;
+            GUI.DrawTexture(new Rect(r.x + r.height * 0.1f, r.y + 3f, r.width - r.height * 0.2f, Mathf.Max(3f, r.height * 0.02f)), Texture2D.whiteTexture);
+            GUI.color = old;
+
+            number.normal.textColor = open ? UiTheme.Accent : UiTheme.Dim;
+            GUI.Label(new Rect(r.x, r.y + r.height * 0.06f, r.width, r.height * 0.3f), mission.ToString("00"), number);
             if (open)
             {
-                GUI.Label(new Rect(r.x + r.width * 0.05f, r.y + r.height * 0.32f, r.width * 0.9f, r.height * 0.3f), Strings.MissionName(mission), name);
-                DrawStars(new Rect(r.x, r.y + r.height * 0.66f, r.width, r.height * 0.28f), progress.Stars(mission));
+                name.normal.textColor = UiTheme.Bone;
+                GUI.Label(new Rect(r.x + r.width * 0.06f, r.y + r.height * 0.36f, r.width * 0.88f, r.height * 0.28f), Strings.MissionName(mission), name);
+                DrawStars(new Rect(r.x, r.y + r.height * 0.68f, r.width, r.height * 0.24f), stars);
             }
             else
             {
-                GUI.Label(new Rect(r.x, r.y + r.height * 0.45f, r.width, r.height * 0.3f), Strings.Get("campaign.locked"), name);
+                name.normal.textColor = UiTheme.Dim;
+                GUI.color = new Color(1f, 1f, 1f, 0.7f);
+                float lock0 = r.height * 0.2f;
+                GUI.DrawTexture(new Rect(r.center.x - lock0 / 2f, r.y + r.height * 0.42f, lock0, lock0), UiTheme.IconTexture(UiTheme.Icon.Alert));
+                GUI.color = old;
+                GUI.Label(new Rect(r.x, r.y + r.height * 0.68f, r.width, r.height * 0.22f), Strings.Get("campaign.locked"), name);
             }
         }
 
         var back = new Rect(Screen.width * 0.04f, Screen.height - Screen.height * 0.14f, Screen.width * 0.2f, Screen.height * 0.1f);
-        if (GUI.Button(back, Strings.Get("menu.back"), _button)) _page = MenuPage.Main;
+        if (IconButton(back, null, Strings.Get("menu.back"))) _page = MenuPage.Main;
     }
 
     // ---------------------------------------------------------------- briefing
@@ -107,28 +121,47 @@ public sealed partial class DemoHud
     private void DrawBriefing()
     {
         Mission mission = Campaign.Get(_briefingMission);
-        var card = new Rect(Screen.width * 0.15f, Screen.height * 0.06f, Screen.width * 0.7f, Screen.height * 0.88f);
+        var card = new Rect(Screen.width * 0.1f, Screen.height * 0.05f, Screen.width * 0.8f, Screen.height * 0.9f);
         GUI.Box(card, "");
+        float pad = card.width * 0.04f;
 
-        var title = new GUIStyle(_stats) { alignment = TextAnchor.MiddleCenter };
-        GUI.Label(new Rect(card.x, card.y + card.height * 0.02f, card.width, card.height * 0.12f),
-            Strings.Get("campaign.mission", mission.Number) + ": " + Strings.MissionName(mission.Number), title);
+        // Header: small caption, mission name, accent bar.
+        var caption = new GUIStyle(_label) { fontStyle = FontStyle.Bold, alignment = TextAnchor.LowerLeft, fontSize = Mathf.RoundToInt(Screen.height * 0.034f) };
+        caption.normal.textColor = UiTheme.Accent;
+        GUI.Label(new Rect(card.x + pad, card.y + card.height * 0.02f, card.width * 0.5f, card.height * 0.07f), Strings.Get("campaign.mission", mission.Number).ToUpperInvariant(), caption);
+        var title = new GUIStyle(_stats) { alignment = TextAnchor.UpperLeft, fontSize = Mathf.RoundToInt(Screen.height * 0.07f) };
+        GUI.Label(new Rect(card.x + pad, card.y + card.height * 0.085f, card.width - pad * 2f, card.height * 0.13f), Strings.MissionName(mission.Number), title);
+        Color old = GUI.color;
+        GUI.color = UiTheme.Accent;
+        GUI.DrawTexture(new Rect(card.x + pad, card.y + card.height * 0.22f, card.width - pad * 2f, Mathf.Max(3f, Screen.height * 0.004f)), Texture2D.whiteTexture);
+        GUI.color = old;
 
+        float colW = (card.width - pad * 3f) / 2f;
+        float top = card.y + card.height * 0.26f;
+        var head = new GUIStyle(_label) { fontStyle = FontStyle.Bold, fontSize = Mathf.RoundToInt(Screen.height * 0.036f) };
+        head.normal.textColor = UiTheme.Dim;
         var body = new GUIStyle(_label) { wordWrap = true, alignment = TextAnchor.UpperLeft };
-        float pad = card.width * 0.05f;
-        GUI.Label(new Rect(card.x + pad, card.y + card.height * 0.15f, card.width - pad * 2f, card.height * 0.26f), Strings.MissionBrief(mission.Number), body);
 
-        var head = new GUIStyle(_label) { fontStyle = FontStyle.Bold };
-        GUI.Label(new Rect(card.x + pad, card.y + card.height * 0.42f, card.width - pad * 2f, card.height * 0.07f), Strings.Get("campaign.briefing"), head);
-        float y = card.y + card.height * 0.49f, line = card.height * 0.065f;
+        // Left column: briefing text, then the objectives.
+        float lx = card.x + pad;
+        GUI.Label(new Rect(lx, top, colW, card.height * 0.2f), Strings.MissionBrief(mission.Number), body);
+        float y = top + card.height * 0.24f, line = card.height * 0.07f;
+        GUI.Label(new Rect(lx, y, colW, line), Strings.Get("campaign.briefing").ToUpperInvariant(), head);
+        y += line * 1.05f;
         foreach (Objective o in mission.Objectives)
         {
-            GUI.Label(new Rect(card.x + pad, y, card.width - pad * 2f, line), "- " + ObjectiveText(o, 0, ObjectiveTarget(mission, o)), body);
+            GUI.color = UiTheme.Accent;
+            GUI.DrawTexture(new Rect(lx, y + line * 0.3f, line * 0.25f, line * 0.25f), Texture2D.whiteTexture);
+            GUI.color = old;
+            GUI.Label(new Rect(lx + line * 0.5f, y, colW - line * 0.5f, line * 1.2f), ObjectiveText(o, 0, ObjectiveTarget(mission, o)), body);
             y += line;
         }
 
-        // what the three stars ask for
-        float starsY = card.y + card.height * 0.63f;
+        // Right column: what each of the three stars asks for.
+        float rx = card.x + pad * 2f + colW;
+        var plate = new Rect(rx, top, colW, card.height * 0.45f);
+        GUI.Box(plate, "");
+        GUI.Label(new Rect(rx + pad * 0.5f, top + card.height * 0.015f, colW, line), Strings.Get("campaign.stars").ToUpperInvariant(), head);
         int best = _game.Progress.Stars(mission.Number);
         string[] reasons =
         {
@@ -136,15 +169,16 @@ public sealed partial class DemoHud
             Strings.Get("campaign.starTime", Clock(mission.ParSeconds)),
             Strings.Get("campaign.starLosses", mission.MaxLosses),
         };
+        float sy = top + card.height * 0.1f, sline = card.height * 0.1f;
         for (int i = 0; i < 3; i++)
         {
-            GUI.DrawTexture(new Rect(card.x + pad, starsY + i * line, line * 0.9f, line * 0.9f), Star(i < best));
-            GUI.Label(new Rect(card.x + pad + line * 1.1f, starsY + i * line, card.width - pad * 2f - line, line), reasons[i], body);
+            GUI.DrawTexture(new Rect(rx + pad * 0.5f, sy + i * sline, sline * 0.8f, sline * 0.8f), Star(i < best));
+            GUI.Label(new Rect(rx + pad * 0.5f + sline, sy + i * sline, colW - pad - sline, sline), reasons[i], body);
         }
 
-        float bh = card.height * 0.11f, bw = card.width * 0.4f, by = card.yMax - bh - card.height * 0.03f;
-        if (GUI.Button(new Rect(card.x + card.width * 0.07f, by, bw, bh), Strings.Get("menu.back"), _button)) _page = MenuPage.Campaign;
-        if (GUI.Button(new Rect(card.xMax - card.width * 0.07f - bw, by, bw, bh), Strings.Get("campaign.start"), _button))
+        float bh = card.height * 0.11f, bw = card.width * 0.3f, by = card.yMax - bh - card.height * 0.03f;
+        if (IconButton(new Rect(card.x + pad, by, bw, bh), null, Strings.Get("menu.back"))) _page = MenuPage.Campaign;
+        if (IconButton(new Rect(card.xMax - pad - bw, by, bw, bh), UiTheme.Icon.Flag, Strings.Get("campaign.start"), true))
         {
             _page = MenuPage.Campaign;
             _game.StartMission(mission.Number);

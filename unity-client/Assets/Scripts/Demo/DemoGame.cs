@@ -64,6 +64,13 @@ public sealed partial class DemoGame : MonoBehaviour
     public TouchController Touch { get; private set; }
     public int SelectedCount => _selected.Count;
     public bool IsSelected(int unitId) => _selected.Contains(unitId);
+    public IEnumerable<int> SelectedIds => _selected;
+
+    /// <summary>Narrows the selection down to the units of one kind.</summary>
+    public void SelectKind(UnitKind kind)
+    {
+        _selected.RemoveWhere(id => World.GetUnit(id) is Unit u && u.Kind != kind);
+    }
     public string SelfTestStatus { get; private set; }
     public bool BuildOverlayVisible => _terrain != null && _terrain.OverlayVisible;
 
@@ -637,6 +644,7 @@ public sealed partial class DemoGame : MonoBehaviour
         UpdateSelectionMarkers();
         UpdateOutcome();
         UpdateTutorial();
+        UpdateNotices(catchingUp);
         if (Outcome != GameOutcome.Playing && !_outcomeSoundPlayed && (IsOfflineMatch || OnlineMatch))
         {
             _outcomeSoundPlayed = true;
@@ -652,6 +660,7 @@ public sealed partial class DemoGame : MonoBehaviour
         foreach (ShotEvent shot in _shotBuffer)
         {
             if (catchingUp) continue;
+            NoticeShot(shot);
             bool heavyShot = shot.Kind == UnitKind.RocketTrooper || shot.Kind == UnitKind.Tank;
             Fx.MuzzleFlash(UnitView.ToUnity(shot.From), UnitView.ToUnity(shot.To), heavyShot);
             PlayShotSound(shot);

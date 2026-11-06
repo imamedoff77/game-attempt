@@ -1,17 +1,27 @@
 using SimCore;
 using UnityEngine;
 
-/// <summary>The profile screen: who the player is, campaign progress and lifetime numbers.</summary>
+/// <summary>The profile screen: who the player is, campaign progress and lifetime numbers as stat tiles.</summary>
 public sealed partial class DemoHud
 {
     private void DrawProfile()
     {
-        var title = new GUIStyle(_stats) { alignment = TextAnchor.MiddleCenter, fontSize = Mathf.RoundToInt(Screen.height * 0.08f) };
-        GUI.Label(new Rect(0f, Screen.height * 0.03f, Screen.width, Screen.height * 0.12f), Strings.Get("profile.title"), title);
+        float w = Screen.width, h = Screen.height;
+        DrawPageTitle(Strings.Get("profile.title"));
+        DrawPageChips(null, _game.Progress.Credits.ToString());
 
         bool signedIn = _game.Account.SignedIn && _game.Account.User != null;
-        var who = new GUIStyle(_label) { alignment = TextAnchor.MiddleCenter, fontSize = Mathf.RoundToInt(Screen.height * 0.05f) };
-        GUI.Label(new Rect(0f, Screen.height * 0.15f, Screen.width, Screen.height * 0.08f), signedIn ? _game.Account.User.displayName : Strings.Get("profile.guest"), who);
+        AccountUser me = signedIn ? _game.Account.User : null;
+
+        // header: avatar, name, rating line
+        var head = new Rect(w * 0.08f, h * 0.17f, w * 0.84f, h * 0.15f);
+        StripePlate(head, UiTheme.Accent);
+        float av = head.height * 0.7f;
+        GUI.DrawTexture(new Rect(head.x + head.height * 0.3f, head.y + (head.height - av) / 2f, av, av), UiTheme.IconTexture(UiTheme.Icon.Person));
+        float tx = head.x + head.height * 1.2f;
+        PageText(new Rect(tx, head.y + head.height * 0.08f, head.width * 0.6f, head.height * 0.5f), signedIn ? me.displayName : Strings.Get("profile.guest"), 0.058f, UiTheme.Bone);
+        string sub = me != null ? Strings.Get("profile.ratingLine", me.rating > 0 ? me.rating : Rating.Start, me.ratedWins, me.ratedGames) : Strings.Get("profile.ratingNone");
+        PageText(new Rect(tx, head.y + head.height * 0.55f, head.width * 0.7f, head.height * 0.35f), sub, 0.035f, UiTheme.Dim);
 
         int armoryLevels = 0, armoryMax = 0;
         foreach (UnitKind kind in ArmoryOrder)
@@ -19,46 +29,40 @@ public sealed partial class DemoHud
             armoryLevels += _game.Armory.Level(kind);
             armoryMax += Armory.MaxLevel;
         }
-
         PlayerStats s = _game.Stats;
-        AccountUser me = signedIn ? _game.Account.User : null;
-        string[] left =
+
+        string[,] tiles =
         {
-            Strings.Get("profile.stars", _game.Progress.TotalStars, Campaign.Missions.Count * 3),
-            Strings.Get("profile.credits", _game.Progress.Credits),
-            Strings.Get("profile.armory", armoryLevels, armoryMax),
-            Strings.Get("profile.streak", _game.Daily.Streak),
-            me != null ? Strings.Get("profile.rating", me.rating > 0 ? me.rating : Rating.Start, me.ratedWins, me.ratedGames) : Strings.Get("profile.ratingNone"),
+            { _game.Progress.TotalStars + " / " + Campaign.Missions.Count * 3, Strings.Get("profile.stars") },
+            { _game.Progress.Credits.ToString(), Strings.Get("profile.credits") },
+            { armoryLevels + " / " + armoryMax, Strings.Get("profile.armory") },
+            { _game.Daily.Streak.ToString(), Strings.Get("profile.streak") },
+            { me != null ? (me.rating > 0 ? me.rating : Rating.Start).ToString() : "-", Strings.Get("profile.rating") },
+            { s.MatchesPlayed.ToString(), Strings.Get("profile.matches") },
+            { s.MatchesWon + " (" + s.WinPercent + "%)", Strings.Get("profile.wins") },
+            { s.MissionsWon.ToString(), Strings.Get("profile.missions") },
+            { s.UnitsBuilt.ToString(), Strings.Get("profile.units") },
+            { s.EnemiesDestroyed.ToString(), Strings.Get("profile.kills") },
         };
-        string[] right =
+        const int columns = 5;
+        float gap = h * 0.025f;
+        float tw = (w * 0.84f - gap * (columns - 1)) / columns, th = h * 0.215f;
+        float x0 = w * 0.08f, y0 = h * 0.37f;
+        for (int i = 0; i < 10; i++)
         {
-            Strings.Get("profile.matches", s.MatchesPlayed),
-            Strings.Get("profile.wins", s.MatchesWon, s.WinPercent),
-            Strings.Get("profile.missions", s.MissionsWon),
-            Strings.Get("profile.units", s.UnitsBuilt),
-            Strings.Get("profile.kills", s.EnemiesDestroyed),
-        };
-        var line = new GUIStyle(_label) { alignment = TextAnchor.MiddleLeft, fontSize = Mathf.RoundToInt(Screen.height * 0.042f) };
-        float colW = Screen.width * 0.36f, rowH = Screen.height * 0.095f, top = Screen.height * 0.27f;
-        DrawProfileColumn(left, Screen.width * 0.12f, top, colW, rowH, line);
-        DrawProfileColumn(right, Screen.width * 0.52f, top, colW, rowH, line);
+            var r = new Rect(x0 + (i % columns) * (tw + gap), y0 + (i / columns) * (th + gap), tw, th);
+            GUI.Box(r, "");
+            Color stripe = i < columns ? UiTheme.Accent : UiTheme.Edge;
+            Color old = GUI.color;
+            GUI.color = stripe;
+            GUI.DrawTexture(new Rect(r.x + r.height * 0.08f, r.y + 3f, r.width - r.height * 0.16f, Mathf.Max(4f, r.height * 0.03f)), Texture2D.whiteTexture);
+            GUI.color = old;
+            PageText(new Rect(r.x, r.y + r.height * 0.12f, r.width, r.height * 0.45f), tiles[i, 0], 0.062f, UiTheme.Bone, TextAnchor.MiddleCenter);
+            PageText(new Rect(r.x + r.width * 0.06f, r.y + r.height * 0.58f, r.width * 0.88f, r.height * 0.36f), tiles[i, 1], 0.03f, UiTheme.Dim, TextAnchor.UpperCenter, false, true);
+        }
 
         if (!signedIn)
-        {
-            var hint = new GUIStyle(_label) { alignment = TextAnchor.UpperCenter, wordWrap = true, fontSize = Mathf.RoundToInt(Screen.height * 0.03f) };
-            GUI.Label(new Rect(Screen.width * 0.2f, Screen.height * 0.85f, Screen.width * 0.6f, Screen.height * 0.08f), Strings.Get("profile.guestHint"), hint);
-        }
-
-        var back = new Rect(Screen.width * 0.04f, Screen.height - Screen.height * 0.14f, Screen.width * 0.1f, Screen.height * 0.1f);
-        if (GUI.Button(back, Strings.Get("menu.back"), _button)) _page = MenuPage.Main;
-    }
-
-    private void DrawProfileColumn(string[] lines, float x, float y, float w, float h, GUIStyle style)
-    {
-        for (int i = 0; i < lines.Length; i++)
-        {
-            GUI.Box(new Rect(x, y + i * h, w, h * 0.88f), "");
-            GUI.Label(new Rect(x + w * 0.05f, y + i * h, w * 0.92f, h * 0.88f), lines[i], style);
-        }
+            PageText(new Rect(w * 0.2f, h * 0.86f, w * 0.7f, h * 0.1f), Strings.Get("profile.guestHint"), 0.03f, UiTheme.Dim, TextAnchor.MiddleLeft, false, true);
+        DrawBackButton(0.1f);
     }
 }

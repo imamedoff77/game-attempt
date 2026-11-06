@@ -18,7 +18,7 @@ public static class UiTheme
     public static readonly Color Warn = new Color(0.93f, 0.74f, 0.24f, 1f);
     public static readonly Color Alert = new Color(0.86f, 0.31f, 0.25f, 1f);
 
-    public enum Icon { Resources, Energy, Units, Clock, Alert, Build, Pause }
+    public enum Icon { Resources, Energy, Units, Clock, Alert, Build, Pause, Flag, Cross, Target, Globe, Star, Person }
 
     private static Texture2D[] _icons;
     private static GUIStyle _chipText;
@@ -156,9 +156,9 @@ public static class UiTheme
 
     // ---------------------------------------------------------------- icons
 
-    private static Texture2D IconTexture(Icon icon)
+    public static Texture2D IconTexture(Icon icon)
     {
-        if (_icons == null) _icons = new Texture2D[7];
+        if (_icons == null) _icons = new Texture2D[13];
         Texture2D cached = _icons[(int)icon];
         if (cached != null) return cached;
 
@@ -171,6 +171,12 @@ public static class UiTheme
             case Icon.Alert: shader = AlertShader; break;
             case Icon.Build: shader = CraneShader; break;
             case Icon.Pause: shader = PauseShader; break;
+            case Icon.Flag: shader = FlagShader; break;
+            case Icon.Cross: shader = CrossShader; break;
+            case Icon.Target: shader = TargetShader; break;
+            case Icon.Globe: shader = GlobeShader; break;
+            case Icon.Star: shader = StarShader; break;
+            case Icon.Person: shader = PersonShader; break;
             default: shader = ClockShader; break;
         }
         _icons[(int)icon] = Render(shader);
@@ -245,6 +251,67 @@ public static class UiTheme
         bool rope = p.x > 0.74f && p.x < 0.80f && p.y > 0.44f && p.y < 0.78f;
         bool hook = p.x > 0.66f && p.x < 0.88f && p.y > 0.32f && p.y < 0.46f;
         return post || foot || arm || rope || hook ? Bone : Color.clear;
+    }
+
+    /// <summary>Pole with a pennant: the rally point.</summary>
+    private static Color FlagShader(Vector2 p)
+    {
+        bool pole = p.x > 0.20f && p.x < 0.30f && p.y > 0.06f && p.y < 0.94f;
+        Vector2[] pennant = { new Vector2(0.30f, 0.92f), new Vector2(0.88f, 0.72f), new Vector2(0.30f, 0.52f) };
+        return pole || InPolygon(pennant, p) ? Bone : Color.clear;
+    }
+
+    /// <summary>X mark: cancel.</summary>
+    private static Color CrossShader(Vector2 p)
+    {
+        bool inside = p.x > 0.14f && p.x < 0.86f && p.y > 0.14f && p.y < 0.86f;
+        bool d1 = Mathf.Abs(p.x - p.y) < 0.075f;
+        bool d2 = Mathf.Abs(p.x + p.y - 1f) < 0.075f;
+        return inside && (d1 || d2) ? Alert : Color.clear;
+    }
+
+    /// <summary>Crosshair: ring, cross and a dot.</summary>
+    private static Color TargetShader(Vector2 p)
+    {
+        float r = (p - new Vector2(0.5f, 0.5f)).magnitude;
+        bool ring = r > 0.30f && r < 0.40f;
+        bool dot = r < 0.07f;
+        bool cross = (Mathf.Abs(p.x - 0.5f) < 0.035f || Mathf.Abs(p.y - 0.5f) < 0.035f) && r > 0.18f && r < 0.48f;
+        return ring || dot || cross ? Bone : Color.clear;
+    }
+
+    /// <summary>Globe: circle outline with a meridian and two parallels.</summary>
+    private static Color GlobeShader(Vector2 p)
+    {
+        Vector2 d = p - new Vector2(0.5f, 0.5f);
+        float r = d.magnitude;
+        if (r > 0.42f) return Color.clear;
+        bool rim = r > 0.35f;
+        bool meridian = Mathf.Abs(d.x) < 0.03f || Mathf.Abs(d.x * d.x / (0.18f * 0.18f) + d.y * d.y / (0.42f * 0.42f) - 1f) < 0.12f;
+        bool parallel = Mathf.Abs(d.y - 0.14f) < 0.03f || Mathf.Abs(d.y + 0.14f) < 0.03f || Mathf.Abs(d.y) < 0.03f;
+        return rim || meridian || parallel ? Bone : Color.clear;
+    }
+
+    /// <summary>Five-point star.</summary>
+    private static Color StarShader(Vector2 p)
+    {
+        var pts = new Vector2[10];
+        for (int i = 0; i < 10; i++)
+        {
+            float a = Mathf.PI / 2f + i * Mathf.PI / 5f;
+            float rad = i % 2 == 0 ? 0.44f : 0.19f;
+            pts[i] = new Vector2(0.5f + Mathf.Cos(a) * rad, 0.5f + Mathf.Sin(a) * rad);
+        }
+        return InPolygon(pts, p) ? Warn : Color.clear;
+    }
+
+    /// <summary>Head and shoulders.</summary>
+    private static Color PersonShader(Vector2 p)
+    {
+        bool head = (p - new Vector2(0.5f, 0.68f)).magnitude < 0.19f;
+        Vector2 b = p - new Vector2(0.5f, 0.12f);
+        bool body = b.y >= 0f && b.x * b.x / (0.38f * 0.38f) + b.y * b.y / (0.36f * 0.36f) <= 1f;
+        return head || body ? Bone : Color.clear;
     }
 
     /// <summary>Two vertical bars.</summary>

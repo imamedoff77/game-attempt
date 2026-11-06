@@ -61,10 +61,12 @@ public sealed partial class DemoHud : MonoBehaviour
 
         if (_game.Mode == DemoGame.GameMode.Menu) { DrawMainMenu(); return; }
 
+        UpdateToasts();
         DrawStats(world);
         DrawUnpoweredIcons(world);
         DrawProductionBars(world);
         DrawHealthBars(world);
+        DrawOrderLines(world);
 
         // Top-right: build menu button and simulation speed.
         Rect[] top = TopRects();
@@ -94,11 +96,13 @@ public sealed partial class DemoHud : MonoBehaviour
         if (_game.SelectedBuilding != null) _menuOpen = false;
         if (_menuOpen && !_game.Placing) DrawBuildMenu(world);
         if (_game.SelectedBuilding != null && !_game.Placing) DrawBuildingPanel(world, _game.SelectedBuilding);
+        if (SelectionBarVisible) DrawSelectionBar(world);
+        DrawToasts();
         if (_game.SettingRally) DrawHint(Strings.Get("hint.rally"));
 
         // Bottom-right row
         Rect[] r = BottomRects();
-        if (GUI.Button(r[0], Strings.Get(_game.Touch.BoxMode ? "button.boxOn" : "button.boxOff"), _button)) _game.Touch.BoxMode = !_game.Touch.BoxMode;
+        if (IconButton(r[0], null, Strings.Get("button.box"), _game.Touch.BoxMode)) _game.Touch.BoxMode = !_game.Touch.BoxMode;
         if (_game.Placing)
         {
             GUI.enabled = _game.PlacingCheck == BuildCheck.Ok;
@@ -109,8 +113,8 @@ public sealed partial class DemoHud : MonoBehaviour
         }
         else
         {
-            if (GUI.Button(r[1], Strings.Get("button.selectAll"), _button)) _game.SelectAll();
-            if (GUI.Button(r[2], Strings.Get("button.clear"), _button)) _game.ClearSelection();
+            if (IconButton(r[1], UiTheme.Icon.Units, Strings.Get("button.selectAll"))) _game.SelectAll();
+            if (IconButton(r[2], UiTheme.Icon.Cross, Strings.Get("button.clear"))) _game.ClearSelection();
         }
 
         if (MinimapVisible) DrawMinimap(world);
@@ -207,12 +211,12 @@ public sealed partial class DemoHud : MonoBehaviour
 
         if (b.UnderConstruction)
         {
-            if (GUI.Button(rects[1], Strings.Get("panel.cancelBuild", Defs.Building(b.Kind).Cost * Economy.CancelRefundPercent / 100), _button)) _game.CancelConstruction();
+            if (IconButton(rects[1], UiTheme.Icon.Cross, Strings.Get("panel.cancelBuild", Defs.Building(b.Kind).Cost * Economy.CancelRefundPercent / 100))) _game.CancelConstruction();
             GUI.enabled = true;
             return;
         }
 
-        Rect[] cards = CardRects(units.Length);
+        Rect[] cards = CardRects(BuildingCardCount(b));
         for (int i = 0; i < units.Length; i++)
         {
             UnitDef ud = Defs.Unit(units[i]);
@@ -231,36 +235,11 @@ public sealed partial class DemoHud : MonoBehaviour
         if (units.Length > 0)
         {
             GUI.enabled = b.Queue.Count > 0;
-            if (GUI.Button(rects[next++], Strings.Get("panel.cancelLast"), _button)) _game.CancelLastQueued();
+            if (IconButton(rects[next++], UiTheme.Icon.Cross, Strings.Get("panel.cancelLast"))) _game.CancelLastQueued();
             GUI.enabled = true;
-            if (GUI.Button(rects[next++], Strings.Get(b.HasRally ? "panel.rallyChange" : "panel.rally"), _button)) _game.BeginSetRally();
+            if (IconButton(rects[next++], UiTheme.Icon.Flag, Strings.Get(b.HasRally ? "panel.rallyChange" : "panel.rally"), _game.SettingRally)) _game.BeginSetRally();
         }
-        if (b.Kind == BuildingKind.Hq)
-        {
-            UpgradeCheck up = world.CheckUpgradeBase(_game.LocalTeam);
-            GUI.enabled = up == UpgradeCheck.Ok;
-            string label = up == UpgradeCheck.MaxLevel
-                ? Strings.Get("panel.maxLevel")
-                : Strings.Get("panel.upgradeBase", me.BaseLevel + 1, Economy.BaseUpgradeCost(me.BaseLevel), Economy.BaseUpgradeSeconds(me.BaseLevel));
-            if (GUI.Button(rects[next++], label, _button)) _game.UpgradeBase();
-
-            for (int k = 0; k < Defs.UpgradeCount; k++)
-            {
-                var kind = (UpgradeKind)k;
-                UpgradeDef ud = Defs.Upgrade(kind);
-                int tier = me.UpgradeTier(kind);
-                ResearchCheck rc = world.CheckResearch(_game.LocalTeam, kind);
-                GUI.enabled = rc == ResearchCheck.Ok;
-                string text2;
-                if (tier >= ud.Tiers) text2 = Strings.Get("panel.researchMax", Strings.UpgradeName(kind), tier * ud.BonusMilli / 10);
-                else
-                {
-                    text2 = Strings.Get("panel.research", Strings.UpgradeName(kind), ud.BonusMilli / 10, tier + 1, ud.Tiers, ud.Cost[tier], ud.Seconds[tier]);
-                    if (rc == ResearchCheck.LevelTooLow) text2 += Strings.Get("panel.needsLevel", ud.RequiredLevel[tier]);
-                }
-                if (GUI.Button(rects[next++], text2, _button)) _game.Research(kind);
-            }
-        }
+        if (b.Kind == BuildingKind.Hq) DrawHqCards(world, me);
         GUI.enabled = true;
     }
 
@@ -269,9 +248,7 @@ public sealed partial class DemoHud : MonoBehaviour
     {
         if (b.UnderConstruction) return 1;
         int units = Defs.Produces(b.Kind).Length;
-        int count = units == 0 ? 0 : 2; // cancel last + rally; the unit cards sit in the bottom row
-        if (b.Kind == BuildingKind.Hq) count += 1 + Defs.UpgradeCount;
-        return count;
+        return units == 0 ? 0 : 2; // cancel last + rally; unit and HQ cards sit in the bottom row
     }
 
     private static int ConstructionPercent(Building b) =>
@@ -483,16 +460,6 @@ public sealed partial class DemoHud : MonoBehaviour
         GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
         GUI.color = old;
 
-        var title = new GUIStyle(_stats)
-        {
-            alignment = TextAnchor.MiddleCenter,
-            fontSize = Mathf.RoundToInt(Screen.height * 0.11f),
-        };
-        if (_page == MenuPage.Main || _page == MenuPage.Difficulty)
-        {
-            var sound = new Rect(Screen.width - Screen.width * 0.22f - Screen.height * 0.02f, Screen.height - Screen.height * 0.12f, Screen.width * 0.22f, Screen.height * 0.1f);
-            if (GUI.Button(sound, Strings.Get(Sfx.Enabled ? "sound.on" : "sound.off"), _button)) Sfx.Enabled = !Sfx.Enabled;
-        }
         if (_page == MenuPage.Campaign) { DrawCampaignList(); return; }
         if (_page == MenuPage.Briefing) { DrawBriefing(); return; }
         if (_page == MenuPage.Armory) { DrawArmory(); return; }
@@ -502,36 +469,8 @@ public sealed partial class DemoHud : MonoBehaviour
         if (_page == MenuPage.Online) { DrawOnlinePage(); return; }
         if (_page == MenuPage.Store) { DrawStore(); return; }
 
-        GUI.Label(new Rect(0f, Screen.height * 0.08f, Screen.width, Screen.height * 0.18f), Application.productName, title);
-        if (_page == MenuPage.Main)
-        {
-            string who = _game.Account.SignedIn && _game.Account.User != null ? _game.Account.User.displayName : Strings.Get("account.menuSignIn");
-            var account = new Rect(Screen.width * 0.74f, Screen.height * 0.03f, Screen.width * 0.24f, Screen.height * 0.09f);
-            if (GUI.Button(account, who, _button)) OpenAccountPage();
-            var profile = new Rect(account.x, account.yMax + Screen.height * 0.015f, account.width, account.height);
-            if (GUI.Button(profile, Strings.Get("profile.title"), _button)) _page = MenuPage.Profile;
-            var store = new Rect(account.x, profile.yMax + Screen.height * 0.015f, account.width, account.height);
-            if (GUI.Button(store, Strings.Get("store.title"), _button)) OpenStorePage();
-        }
-
-        Rect[] buttons = MenuColumn(_page == MenuPage.Main ? MainMenuButtons : 4);
-        if (_page == MenuPage.Main)
-        {
-            if (GUI.Button(buttons[0], Strings.Get("mode.campaign"), _button)) _page = MenuPage.Campaign;
-            if (GUI.Button(buttons[1], Strings.Get("mode.vsComputer"), _button)) _page = MenuPage.Difficulty;
-            if (GUI.Button(buttons[2], Strings.Get("mode.online"), _button)) _page = MenuPage.Online;
-            if (GUI.Button(buttons[3], Strings.Get("mode.armory"), _button)) _page = MenuPage.Armory;
-            string daily = Strings.Get("mode.daily") + (_game.Daily.HasSomethingToClaim(DemoGame.Today) ? "  (!)" : "");
-            if (GUI.Button(buttons[4], daily, _button)) _page = MenuPage.Daily;
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-            if (GUI.Button(buttons[5], Strings.Get("mode.sandbox"), _button)) _game.StartDemo();
-#endif
-            return;
-        }
-
-        foreach (AiDifficulty d in System.Enum.GetValues(typeof(AiDifficulty)))
-            if (GUI.Button(buttons[(int)d], Strings.DifficultyName(d), _button)) { _page = MenuPage.Main; _game.StartSkirmish(d); }
-        if (GUI.Button(buttons[3], Strings.Get("menu.back"), _button)) _page = MenuPage.Main;
+        if (_page == MenuPage.Difficulty) DrawDifficulty();
+        else DrawHub();
     }
 
     /// <summary>Back to the main menu; after a campaign mission the mission list is shown again.</summary>
@@ -641,8 +580,14 @@ public sealed partial class DemoHud : MonoBehaviour
         {
             foreach (Rect r in PanelRects(PanelButtonCount(_game.SelectedBuilding))) yield return r;
             if (!_game.SelectedBuilding.UnderConstruction)
-                foreach (Rect r in CardRects(Defs.Produces(_game.SelectedBuilding.Kind).Length)) yield return r;
+                foreach (Rect r in CardRects(BuildingCardCount(_game.SelectedBuilding))) yield return r;
         }
+        if (SelectionBarVisible)
+        {
+            RefreshSelectionGroups(_game.World);
+            foreach (Rect r in CardRects(_selectionGroups.Count)) yield return r;
+        }
+        foreach (Rect r in ToastRects()) yield return r;
         if (_chatOpen) yield return ChatPanelRect();
         if (_game.Paused) yield return PauseCardRect();
         if ((_game.IsOfflineMatch || _game.OnlineMatch) && _game.Outcome != DemoGame.GameOutcome.Playing) yield return EndCardRect();

@@ -53,9 +53,11 @@ public sealed partial class DemoHud
 
         // frame, terrain
         Color old = GUI.color;
-        GUI.color = new Color(0f, 0f, 0f, 0.7f);
-        float border = Screen.height * 0.006f;
-        GUI.DrawTexture(new Rect(r.x - border, r.y - border, r.width + border * 2f, r.height + border * 2f), Texture2D.whiteTexture);
+        float border = Screen.height * 0.008f;
+        var outer = new Rect(r.x - border, r.y - border, r.width + border * 2f, r.height + border * 2f);
+        GUI.color = UiTheme.Ink;
+        GUI.DrawTexture(outer, Texture2D.whiteTexture);
+        UiTheme.Outline(outer, UiTheme.Edge, Mathf.Max(2f, border * 0.35f));
         GUI.color = Color.white;
         GUI.DrawTextureWithTexCoords(r, _miniTerrain, new Rect(0f, 0f, 1f, 1f));
 
@@ -73,6 +75,16 @@ public sealed partial class DemoHud
             GUI.color = u.Team == _game.LocalTeam ? MiniMine : MiniEnemy;
             Vector3 p = UnitView.ToUnity(u.Pos);
             GUI.DrawTexture(new Rect(r.x + p.x * px - dot / 2f, r.yMax - p.z * py - dot / 2f, dot, dot), Texture2D.whiteTexture);
+        }
+
+        // the last attack on you: a red square that pulses for a few seconds
+        float sincePing = Time.unscaledTime - _game.LastAttackTime;
+        if (sincePing < 6f)
+        {
+            float pulse = (sincePing * 1.5f) % 1f;
+            float size = dot * (3f + 5f * pulse);
+            float cx = r.x + Mathf.Clamp(_game.LastAttackPos.x, 0f, w) * px, cy = r.yMax - Mathf.Clamp(_game.LastAttackPos.z, 0f, h) * py;
+            UiTheme.Outline(new Rect(cx - size / 2f, cy - size / 2f, size, size), new Color(UiTheme.Alert.r, UiTheme.Alert.g, UiTheme.Alert.b, 1f - pulse), Mathf.Max(2f, Screen.height * 0.004f));
         }
 
         // what the camera sees: the four screen corners on the ground (a trapezoid, because the camera looks along the ground)

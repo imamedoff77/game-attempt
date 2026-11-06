@@ -9,50 +9,56 @@ public sealed partial class DemoHud
         DailyProgress daily = _game.Daily;
         int day = DemoGame.Today;
 
-        var title = new GUIStyle(_stats) { alignment = TextAnchor.MiddleCenter, fontSize = Mathf.RoundToInt(Screen.height * 0.08f) };
-        GUI.Label(new Rect(0f, Screen.height * 0.03f, Screen.width, Screen.height * 0.12f), Strings.Get("daily.title"), title);
-        var sub = new GUIStyle(_label) { alignment = TextAnchor.MiddleCenter };
-        GUI.Label(new Rect(0f, Screen.height * 0.14f, Screen.width, Screen.height * 0.06f), Strings.Get("armory.credits", _game.Progress.Credits), sub);
+        DrawPageTitle(Strings.Get("daily.title"));
+        DrawPageChips(null, _game.Progress.Credits.ToString());
 
-        float w = Screen.width * 0.7f, h = Screen.height * 0.14f, gap = Screen.height * 0.02f;
-        float x = (Screen.width - w) / 2f, y = Screen.height * 0.22f;
-        var name = new GUIStyle(_stats) { alignment = TextAnchor.MiddleLeft, fontSize = Mathf.RoundToInt(Screen.height * 0.05f) };
-        var line = new GUIStyle(_label) { alignment = TextAnchor.MiddleLeft };
-        float pad = w * 0.04f, bw = w * 0.22f;
+        float w = Screen.width * 0.76f, h = Screen.height * 0.15f, gap = Screen.height * 0.022f;
+        float x = (Screen.width - w) / 2f, y = Screen.height * 0.17f;
+        float pad = h * 0.3f, bw = w * 0.2f;
 
         // login reward
-        var card = new Rect(x, y, w, h);
-        GUI.Box(card, "");
         bool canClaimLogin = daily.CanClaimReward(day);
         int streak = canClaimLogin ? daily.StreakIfClaimed(day) : daily.Streak;
-        GUI.Label(new Rect(x + pad, y + h * 0.06f, w - bw - pad * 3f, h * 0.5f), Strings.Get("daily.login", daily.RewardFor(streak)), name);
-        GUI.Label(new Rect(x + pad, y + h * 0.56f, w - bw - pad * 3f, h * 0.36f), Strings.Get("daily.streak", streak), line);
-        DrawClaimButton(new Rect(x + w - bw - pad, y + h * 0.2f, bw, h * 0.6f), canClaimLogin, _game.ClaimDailyReward, !canClaimLogin);
+        var card = new Rect(x, y, w, h);
+        StripePlate(card, canClaimLogin ? UiTheme.Accent : UiTheme.Good);
+        DailyRowText(card, pad, bw, Strings.Get("daily.login", daily.RewardFor(streak)), Strings.Get("daily.streak", streak), -1f);
+        DrawClaimButton(new Rect(card.xMax - bw - pad * 0.6f, card.y + h * 0.2f, bw, h * 0.6f), canClaimLogin, _game.ClaimDailyReward, !canClaimLogin);
 
         // tasks
         DailyTask[] tasks = DailyProgress.TasksFor(day);
         for (int i = 0; i < tasks.Length; i++)
         {
-            float ty = y + (i + 1) * (h + gap);
-            GUI.Box(new Rect(x, ty, w, h), "");
-            GUI.Label(new Rect(x + pad, ty + h * 0.06f, w - bw - pad * 3f, h * 0.5f), Strings.DailyTaskText(tasks[i]), name);
-            string progress = Strings.Get("daily.progress", daily.Progress(day, i), tasks[i].Target) + "   +" + tasks[i].Reward;
-            GUI.Label(new Rect(x + pad, ty + h * 0.56f, w - bw - pad * 3f, h * 0.36f), progress, line);
+            var row = new Rect(x, y + (i + 1) * (h + gap), w, h);
+            int done = daily.Progress(day, i);
+            bool claimed = daily.IsClaimed(day, i), ready = daily.CanClaimTask(day, i);
+            StripePlate(row, claimed ? UiTheme.Good : ready ? UiTheme.Accent : UiTheme.Edge);
+            DailyRowText(row, pad, bw, Strings.DailyTaskText(tasks[i]), Strings.Get("daily.progress", done, tasks[i].Target), (float)done / tasks[i].Target);
+            UiTheme.IconLabel(new Rect(row.xMax - bw * 1.95f - pad * 0.6f, row.y + h * 0.34f, bw * 0.85f, h * 0.32f), UiTheme.Icon.Resources, "+" + tasks[i].Reward, UiTheme.Bone);
             int index = i;
-            DrawClaimButton(new Rect(x + w - bw - pad, ty + h * 0.2f, bw, h * 0.6f), daily.CanClaimTask(day, i), () => _game.ClaimDailyTask(index), daily.IsClaimed(day, i));
+            DrawClaimButton(new Rect(row.xMax - bw - pad * 0.6f, row.y + h * 0.2f, bw, h * 0.6f), ready, () => _game.ClaimDailyTask(index), claimed);
         }
 
-        var hint = new GUIStyle(_label) { alignment = TextAnchor.UpperCenter, wordWrap = true, fontSize = Mathf.RoundToInt(Screen.height * 0.028f) };
-        GUI.Label(new Rect(Screen.width * 0.22f, Screen.height * 0.9f, Screen.width * 0.56f, Screen.height * 0.07f), Strings.Get("daily.hint"), hint);
+        PageHint(Strings.Get("daily.hint"));
+        DrawBackButton(0.1f);
+    }
 
-        var back = new Rect(Screen.width * 0.04f, Screen.height - Screen.height * 0.14f, Screen.width * 0.1f, Screen.height * 0.1f);
-        if (GUI.Button(back, Strings.Get("menu.back"), _button)) _page = MenuPage.Main;
+    // Title and a second line (with an optional progress bar) on the left of a daily row.
+    private void DailyRowText(Rect row, float pad, float bw, string title, string second, float barFraction)
+    {
+        float tw = row.width - bw * 2.3f - pad * 1.5f;
+        PageText(new Rect(row.x + pad, row.y + row.height * 0.1f, tw, row.height * 0.4f), title, 0.045f, UiTheme.Bone);
+        if (barFraction >= 0f)
+        {
+            PageBar(new Rect(row.x + pad, row.y + row.height * 0.62f, tw * 0.62f, row.height * 0.16f), barFraction, UiTheme.Accent);
+            PageText(new Rect(row.x + pad + tw * 0.66f, row.y + row.height * 0.52f, tw * 0.34f, row.height * 0.36f), second, 0.032f, UiTheme.Dim);
+        }
+        else PageText(new Rect(row.x + pad, row.y + row.height * 0.52f, tw, row.height * 0.36f), second, 0.034f, UiTheme.Dim);
     }
 
     private void DrawClaimButton(Rect r, bool canClaim, System.Action claim, bool alreadyClaimed = false)
     {
         GUI.enabled = canClaim;
-        if (GUI.Button(r, Strings.Get(alreadyClaimed ? "daily.claimed" : "daily.claim"), _button)) claim();
+        if (IconButton(r, alreadyClaimed ? UiTheme.Icon.Flag : (UiTheme.Icon?)null, Strings.Get(alreadyClaimed ? "daily.claimed" : "daily.claim"), canClaim)) claim();
         GUI.enabled = true;
     }
 }

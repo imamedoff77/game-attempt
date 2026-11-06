@@ -44,11 +44,11 @@ public sealed partial class DemoHud
     private void DrawAccount()
     {
         float w = Screen.width, h = Screen.height;
-        var title = new GUIStyle(_stats) { alignment = TextAnchor.MiddleCenter, fontSize = Mathf.RoundToInt(h * 0.08f) };
-        GUI.Label(new Rect(0f, h * 0.03f, w, h * 0.12f), Strings.Get("account.title"), title);
+        DrawPageTitle(Strings.Get("account.title"));
         if (_accField == null) _accField = new GUIStyle(GUI.skin.textField) { fontSize = Mathf.RoundToInt(h * 0.04f), alignment = TextAnchor.MiddleLeft, padding = new RectOffset(16, 16, 4, 4) };
         _accField.fontSize = Mathf.RoundToInt(h * 0.04f);
 
+        GUI.Box(new Rect(w * 0.18f, h * 0.15f, w * 0.64f, h * 0.7f), "");
         GUI.enabled = !_accBusy;
         switch (_accView)
         {
@@ -61,12 +61,11 @@ public sealed partial class DemoHud
         GUI.enabled = true;
 
         var msg = new GUIStyle(_label) { alignment = TextAnchor.UpperCenter, wordWrap = true, fontSize = Mathf.RoundToInt(h * 0.034f) };
-        msg.normal.textColor = _accMessageIsError ? new Color(1f, 0.55f, 0.5f) : new Color(0.6f, 1f, 0.7f);
+        msg.normal.textColor = _accMessageIsError ? UiTheme.Alert : UiTheme.Good;
         string text = _accBusy ? Strings.Get("account.busy") : _accMessage;
-        GUI.Label(new Rect(w * 0.2f, h * 0.8f, w * 0.6f, h * 0.12f), text, msg);
+        GUI.Label(new Rect(w * 0.2f, h * 0.86f, w * 0.6f, h * 0.1f), text, msg);
 
-        var back = new Rect(w * 0.04f, h - h * 0.14f, w * 0.12f, h * 0.1f);
-        if (GUI.Button(back, Strings.Get("menu.back"), _button)) _page = MenuPage.Main;
+        DrawBackButton();
     }
 
     private Rect AccountColumn(float top) => new Rect(Screen.width * 0.25f, Screen.height * top, Screen.width * 0.5f, Screen.height * 0.085f);

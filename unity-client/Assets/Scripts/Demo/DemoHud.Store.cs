@@ -11,38 +11,37 @@ public sealed partial class DemoHud
 
     private void DrawStore()
     {
-        var title = new GUIStyle(_stats) { alignment = TextAnchor.MiddleCenter, fontSize = Mathf.RoundToInt(Screen.height * 0.08f) };
-        GUI.Label(new Rect(0f, Screen.height * 0.03f, Screen.width, Screen.height * 0.12f), Strings.Get("store.title"), title);
-        var sub = new GUIStyle(_label) { alignment = TextAnchor.MiddleCenter };
-        GUI.Label(new Rect(0f, Screen.height * 0.14f, Screen.width, Screen.height * 0.06f), Strings.Get("armory.credits", _game.Progress.Credits), sub);
+        DrawPageTitle(Strings.Get("store.title"));
+        DrawPageChips(null, _game.Progress.Credits.ToString());
 
-        float w = Screen.width * 0.7f, h = Screen.height * 0.13f, gap = Screen.height * 0.018f;
-        float x = (Screen.width - w) / 2f, y = Screen.height * 0.21f;
-        var name = new GUIStyle(_stats) { alignment = TextAnchor.MiddleLeft, fontSize = Mathf.RoundToInt(Screen.height * 0.05f) };
-        var line = new GUIStyle(_label) { alignment = TextAnchor.MiddleLeft };
-        float pad = w * 0.04f, bw = w * 0.22f;
+        float w = Screen.width * 0.76f, h = Screen.height * 0.15f, gap = Screen.height * 0.022f;
+        float x = (Screen.width - w) / 2f, y = Screen.height * 0.17f;
+        float pad = h * 0.3f, bw = w * 0.22f;
 
         for (int i = 0; i < Billing.ProductIds.Length; i++)
         {
             string id = Billing.ProductIds[i];
-            float ty = y + i * (h + gap);
-            GUI.Box(new Rect(x, ty, w, h), "");
-            GUI.Label(new Rect(x + pad, ty + h * 0.06f, w - bw - pad * 3f, h * 0.5f), Strings.Get("store.product." + id), name);
+            bool booster = id == "booster_credits_x2_7d";
+            bool active = booster && _game.DoubleCreditsActive;
+            var row = new Rect(x, y + i * (h + gap), w, h);
+            StripePlate(row, active ? UiTheme.Good : booster ? UiTheme.Warn : UiTheme.Accent);
+
+            float icon = h * 0.52f;
+            GUI.DrawTexture(new Rect(row.x + pad, row.y + (h - icon) / 2f, icon, icon), UiTheme.IconTexture(booster ? UiTheme.Icon.Star : UiTheme.Icon.Resources));
+            float tx = row.x + pad * 1.4f + icon, tw = row.width - bw - icon - pad * 3f;
             string detail = Strings.Get("store.detail." + id);
-            if (id == "booster_credits_x2_7d" && _game.DoubleCreditsActive)
-                detail = Strings.Get("store.boosterActive", (_game.DoubleCreditsUntil.ToLocalTime()).ToString("yyyy-MM-dd HH:mm"));
-            GUI.Label(new Rect(x + pad, ty + h * 0.56f, w - bw - pad * 3f, h * 0.36f), detail, line);
+            if (active) detail = Strings.Get("store.boosterActive", _game.DoubleCreditsUntil.ToLocalTime().ToString("yyyy-MM-dd HH:mm"));
+            PageText(new Rect(tx, row.y + h * 0.1f, tw, h * 0.42f), Strings.Get("store.product." + id), 0.048f, UiTheme.Bone);
+            PageText(new Rect(tx, row.y + h * 0.54f, tw, h * 0.36f), detail, 0.032f, active ? UiTheme.Good : UiTheme.Dim);
+
             string price = Billing.PriceOf(id);
             GUI.enabled = !_game.StoreBusy && price.Length > 0;
-            if (GUI.Button(new Rect(x + w - bw - pad, ty + h * 0.2f, bw, h * 0.6f), price.Length > 0 ? price : "-", _button)) _game.BuyProduct(id);
+            if (IconButton(new Rect(row.xMax - bw - pad * 0.6f, row.y + h * 0.2f, bw, h * 0.6f), null, price.Length > 0 ? price : "-", GUI.enabled)) _game.BuyProduct(id);
             GUI.enabled = true;
         }
 
-        var message = new GUIStyle(_label) { alignment = TextAnchor.UpperCenter, wordWrap = true, fontSize = Mathf.RoundToInt(Screen.height * 0.034f) };
         string text = _game.StoreMessageKey.Length > 0 ? Strings.Get(_game.StoreMessageKey) : Strings.Get(Billing.Available ? "store.hint" : "store.unavailable");
-        GUI.Label(new Rect(Screen.width * 0.15f, Screen.height * 0.88f, Screen.width * 0.7f, Screen.height * 0.1f), text, message);
-
-        var back = new Rect(Screen.width * 0.04f, Screen.height - Screen.height * 0.14f, Screen.width * 0.1f, Screen.height * 0.1f);
-        if (GUI.Button(back, Strings.Get("menu.back"), _button)) _page = MenuPage.Main;
+        PageHint(text);
+        DrawBackButton(0.1f);
     }
 }
