@@ -8,11 +8,11 @@ using UnityEngine;
 public class RtsCamera : MonoBehaviour
 {
     private const float Pitch = 55f;
-    private const float MinDistance = 10f;
+    private const float MinDistance = 8f;
     private const float MaxDistance = 45f;
 
     private Vector3 _pivot;
-    private float _distance = 24f;
+    private float _distance = 17f;
     private float _mapSize = 64f;
 
     public Camera Camera { get; private set; }

@@ -30,6 +30,8 @@ PALETTE = [
     ("green_dark", "#386629"), ("dry", "#9C8B4A"), ("khaki", "#A89A6A"), ("crate", "#8E6B3E"),
     ("container_red", "#B2432F"), ("container_blue", "#3C6E9E"), ("container_green", "#4C8452"), ("flag", "#E7E7E7"),
 ]
+BEVEL_MIN_SIZE = 0.11   # boxes thinner than this stay sharp
+BEVEL_MAX = 0.035
 COLS = 8
 CELL_PX = 4
 PAL_INDEX = {name: i for i, (name, _) in enumerate(PALETTE)}
@@ -69,6 +71,7 @@ class Builder:
     def __init__(self):
         self.bm = bmesh.new()
         self.uv = self.bm.loops.layers.uv.verify()
+        self.bevel_min = BEVEL_MIN_SIZE
 
     def _finish(self, faces, color):
         bmesh.ops.recalc_face_normals(self.bm, faces=faces)
@@ -81,6 +84,7 @@ class Builder:
         vs = [self.bm.verts.new(p) for p in verts_xyz]
         faces = [self.bm.faces.new([vs[i] for i in f]) for f in face_indices]
         self._finish(faces, color)
+        self._last_faces = faces
 
     @staticmethod
     def _xform(points, center, yaw=0.0, pitch=0.0, roll=0.0, pivot=None):
@@ -95,6 +99,16 @@ class Builder:
                (-sx, -sy, sz), (sx, -sy, sz), (sx, sy, sz - top_front_drop * 2), (-sx, sy, sz - top_front_drop * 2)]
         faces = [(0, 3, 2, 1), (4, 5, 6, 7), (0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)]
         self._poly(self._xform(pts, center, yaw, pitch, roll), faces, color)
+        self._bevel_last_box(min(size))
+
+    def _bevel_last_box(self, thickness):
+        """A small chamfer on the box just made: edges catch the light, so blocks stop looking like flat cut-outs.
+        Only boxes thick enough to take it (tiny parts stay cheap)."""
+        if thickness < self.bevel_min:
+            return
+        faces = self._last_faces
+        edges = list({e for f in faces for e in f.edges})
+        bmesh.ops.bevel(self.bm, geom=edges, offset=min(thickness * 0.14, BEVEL_MAX), segments=1, affect="EDGES", profile=0.5)
 
     # Box standing on the ground: z is the base height
     def block(self, x, y, base_z, sx, sy, sz, color, yaw=0.0):
@@ -342,6 +356,7 @@ def bush(b):
 # Same palette, same conventions, 4-6x the triangles of the simple models. Used to measure what the
 # "more realistic low-poly" direction costs on a phone before the final art is made.
 def rifleman_hd(b, rocket=False):
+    b.bevel_min = 0.2   # infantry: only the big pieces are bevelled (triangle budget)
     cloth, cloth_dark, gear = "olive", "olive_dark", "khaki"
     for sx in (-0.095, 0.095):
         b.block(sx, 0.0, 0.0, 0.12, 0.2, 0.09, "black")                        # boot
@@ -365,12 +380,16 @@ def rifleman_hd(b, rocket=False):
     b.sphere((0, -0.005, 1.07), 0.125, cloth_dark, squash=0.7, subdiv=2)        # helmet shell
     b.block(0, 0.02, 1.0, 0.27, 0.27, 0.025, cloth_dark)                        # helmet brim
     b.block(0, 0.1, 1.03, 0.17, 0.03, 0.05, "black")                            # goggles
-    b.block(0, -0.2, 0.52, 0.28, 0.14, 0.34, cloth_dark)                        # backpack
+    b.block(0, -0.2, 0.52, 0.28, 0.14, 0.34, "team_dark")                       # backpack in the team colour
+    b.block(0, -0.2, 0.7, 0.3, 0.16, 0.05, "team")                              # backpack flap
+    for sx in (-1, 1):
+        b.block(sx * (torso_w / 2 + 0.05), 0.02, 0.83, 0.13, 0.15, 0.05, "team")  # shoulder pads: seen from above
+    b.block(0, 0.0, 1.145, 0.07, 0.22, 0.04, "team")                            # helmet stripe
     b.cyl((0, -0.22, 0.88), 0.07, 0.3, "khaki", seg=8, axis="x")                # bedroll
     if rocket:
-        b.cyl((-0.2, 0.0, 0.88), 0.075, 0.95, "olive", seg=10, axis="y")        # launch tube
-        b.cyl((-0.2, -0.5, 0.88), 0.1, 0.1, "metal", seg=10, axis="y", r2=0.08)
-        b.cyl((-0.2, 0.52, 0.88), 0.1, 0.12, "orange", seg=10, axis="y", r2=0.045)
+        b.cyl((-0.2, 0.0, 0.88), 0.075, 0.95, "olive", seg=8, axis="y")        # launch tube
+        b.cyl((-0.2, -0.5, 0.88), 0.1, 0.1, "metal", seg=8, axis="y", r2=0.08)
+        b.cyl((-0.2, 0.52, 0.88), 0.1, 0.12, "orange", seg=8, axis="y", r2=0.045)
         b.block(-0.2, 0.0, 0.94, 0.05, 0.2, 0.05, "black")                      # sight
     else:
         b.box((0.12, 0.28, 0.66), (0.06, 0.5, 0.09), "black")                   # rifle body
@@ -395,20 +414,20 @@ def tank_hd(b):
             b.cyl((sx, -0.6 + i * 0.4, 0.46), 0.05, 0.4, "metal", seg=6, axis="x")                    # return rollers
         for i in range(10):
             b.block(sx, -1.0 + i * 0.22, 0.0, 0.5, 0.1, 0.06, "black")                                 # track pads
-    b.box((0, -0.05, 0.62), (1.14, 2.0, 0.34), "team", top_front_drop=0.12)    # hull
-    b.block(0, 0.95, 0.45, 1.1, 0.25, 0.1, "team_dark")                        # glacis plate
-    b.block(0, -0.62, 0.79, 0.95, 0.62, 0.07, "team_dark")                     # engine deck
+    b.box((0, -0.05, 0.62), (1.14, 2.0, 0.34), "olive", top_front_drop=0.12)    # hull
+    b.block(0, 0.95, 0.45, 1.1, 0.25, 0.1, "olive_dark")                        # glacis plate
+    b.block(0, -0.62, 0.79, 0.95, 0.62, 0.07, "olive_dark")                     # engine deck
     for i in range(7):
         b.block(-0.36 + i * 0.12, -0.62, 0.86, 0.06, 0.5, 0.025, "black")      # grille slats
     b.block(0, 0.05, 0.79, 0.8, 0.2, 0.05, "olive_dark")                       # turret ring
-    b.cyl((0, -0.08, 0.98), 0.5, 0.3, "team", seg=12)                          # turret
-    b.cyl((0, -0.08, 1.14), 0.42, 0.04, "team_dark", seg=12)                   # turret roof
-    b.block(0, 0.4, 0.88, 0.5, 0.25, 0.26, "team_dark")                        # gun mantlet
+    b.cyl((0, -0.08, 0.98), 0.5, 0.3, "olive", seg=12)                          # turret
+    b.cyl((0, -0.08, 1.14), 0.42, 0.04, "olive_dark", seg=12)                   # turret roof
+    b.block(0, 0.4, 0.88, 0.5, 0.25, 0.26, "olive_dark")                        # gun mantlet
     b.cyl((0, 1.0, 1.0), 0.075, 1.3, "metal", seg=10, axis="y")                # barrel
     b.cyl((0, 1.55, 1.0), 0.1, 0.15, "black", seg=10, axis="y")                # muzzle brake
     b.cyl((0, 0.45, 1.0), 0.11, 0.2, "metal_light", seg=10, axis="y")          # recoil sleeve
-    b.cyl((-0.2, -0.2, 1.2), 0.11, 0.07, "team_dark", seg=10)                  # commander hatch
-    b.cyl((0.2, -0.2, 1.17), 0.1, 0.05, "team_dark", seg=10)                   # loader hatch
+    b.cyl((-0.2, -0.2, 1.2), 0.11, 0.07, "olive_dark", seg=10)                  # commander hatch
+    b.cyl((0.2, -0.2, 1.17), 0.1, 0.05, "olive_dark", seg=10)                   # loader hatch
     b.cyl((0.25, 0.1, 1.22), 0.03, 0.22, "black", seg=6, axis="y")             # machine gun
     for i in range(4):
         b.cyl((0.45, 0.2 - i * 0.07, 0.99 + i * 0.01), 0.025, 0.12, "black", seg=6, axis="x")         # smoke launchers
@@ -416,7 +435,10 @@ def tank_hd(b):
     b.block(0.35, -0.95, 0.79, 0.3, 0.2, 0.18, "crate")                        # rear crate
     b.cyl((0.27, -0.4, 1.35), 0.02, 0.5, "black", seg=4)                       # antenna
     b.block(-0.55, 0.5, 0.74, 0.18, 0.55, 0.05, "metal")                       # tool rack
-
+    # team colour only on accents: turret roof plate, front stripe, rear panel
+    b.block(0, -0.2, 1.155, 0.36, 0.28, 0.03, "team")
+    b.block(0, 0.93, 0.55, 0.6, 0.12, 0.025, "team")
+    b.block(0, -0.7, 0.855, 0.6, 0.14, 0.03, "team")
 
 def barracks_hd(b):
     b.block(0, 0.15, 0, 2.8, 1.4, 0.12, "concrete")                            # foundation
@@ -424,8 +446,8 @@ def barracks_hd(b):
     for i in range(7):
         b.block(-1.25 + i * 0.42, -0.45, 0.12, 0.06, 0.04, 0.58, "sand_dark")  # wall ribs
     b.block(0, 0.15, 0.7, 2.7, 1.3, 0.06, "sand_dark")                         # eaves
-    b.gable((0, 0.15, 0.76), (2.7, 1.3, 0.5), "team", overhang=0.1)            # roof
-    b.block(0, 0.15, 1.24, 2.75, 0.07, 0.05, "team_dark")                      # ridge cap
+    b.gable((0, 0.15, 0.76), (2.7, 1.3, 0.5), "sand_dark", overhang=0.1)            # roof
+    b.block(0, 0.15, 1.24, 2.75, 0.07, 0.05, "metal")                      # ridge cap
     for i in range(4):
         b.block(-1.1 + i * 0.7, 0.55, 0.85, 0.22, 0.2, 0.07, "metal")          # roof vents
     b.cyl((1.0, 0.4, 1.05), 0.1, 0.5, "sand_dark", seg=8)                      # chimney
@@ -475,19 +497,19 @@ def jeep_hd(b):
         for sy in (-0.52, 0.52):
             b.cyl((sx, sy, 0.22), 0.22, 0.18, "tire", seg=10, axis="x")                 # tyre
             b.cyl((sx + out * 0.1, sy, 0.22), 0.1, 0.04, "metal_light", seg=8, axis="x")  # hub
-        b.block(sx + out * 0.05, 0.52, 0.34, 0.3, 0.5, 0.05, "team_dark")              # front fender
-        b.block(sx + out * 0.05, -0.52, 0.34, 0.3, 0.5, 0.05, "team_dark")             # rear fender
+        b.block(sx + out * 0.05, 0.52, 0.34, 0.3, 0.5, 0.05, "olive_dark")              # front fender
+        b.block(sx + out * 0.05, -0.52, 0.34, 0.3, 0.5, 0.05, "olive_dark")             # rear fender
     b.block(0, 0, 0.16, 0.8, 1.7, 0.2, "black")                                          # underbody
-    b.block(0, 0, 0.3, 0.9, 1.65, 0.12, "team_dark")                                     # chassis
-    b.box((0, 0.5, 0.52), (0.84, 0.7, 0.3), "team", top_front_drop=0.04)                # hood
+    b.block(0, 0, 0.3, 0.9, 1.65, 0.12, "olive_dark")                                     # chassis
+    b.box((0, 0.5, 0.52), (0.84, 0.7, 0.3), "olive", top_front_drop=0.04)                # hood
     b.block(0, 0.86, 0.36, 0.78, 0.06, 0.26, "metal")                                    # grille
     for i in range(4):
         b.block(-0.27 + i * 0.18, 0.89, 0.4, 0.05, 0.03, 0.18, "black")
     for sx in (-0.3, 0.3):
         b.block(sx, 0.88, 0.58, 0.14, 0.05, 0.1, "yellow")                              # headlights
-    b.block(0, -0.2, 0.42, 0.84, 0.9, 0.1, "team")                                       # cabin floor
+    b.block(0, -0.2, 0.42, 0.84, 0.9, 0.1, "olive")                                       # cabin floor
     b.block(0, 0.12, 0.56, 0.8, 0.07, 0.34, "glass")                                     # windscreen
-    b.block(0, 0.12, 0.9, 0.84, 0.09, 0.05, "team_dark")                                 # screen frame
+    b.block(0, 0.12, 0.9, 0.84, 0.09, 0.05, "olive_dark")                                 # screen frame
     for sx in (-0.2, 0.2):
         b.block(sx, -0.12, 0.52, 0.28, 0.3, 0.1, "olive_dark")                           # seats
         b.block(sx, -0.3, 0.6, 0.26, 0.07, 0.28, "olive_dark")
@@ -503,9 +525,9 @@ def jeep_hd(b):
     b.cyl((0, 0.12, 1.25), 0.05, 0.6, "black", seg=6, axis="y")                          # machine gun
     b.block(0, -0.12, 1.2, 0.16, 0.2, 0.1, "metal")                                      # receiver
     b.cyl((0.45, -0.8, 1.1), 0.015, 0.8, "black", seg=4)                                 # antenna
-    b.block(0, 0.55, 0.78, 0.4, 0.05, 0.03, "team_dark")                                 # hood stripe
+    b.block(0, 0.55, 0.78, 0.4, 0.05, 0.03, "team")                                 # hood stripe
     b.block(-0.55, 0.3, 0.55, 0.05, 0.2, 0.18, "black")                                  # mirror
-
+    b.block(0, -0.62, 0.52, 0.5, 0.05, 0.12, "team")                                     # tailgate stripe
 
 def sniper_hd(b):
     """Rifleman body in a darker kit, long rifle, bipod, ghillie scarf: a thin tall silhouette."""
@@ -513,9 +535,9 @@ def sniper_hd(b):
     b.block(0, 0.02, 1.06, 0.3, 0.3, 0.05, "dry")                                        # camo cover over the helmet
     b.block(0, -0.12, 0.7, 0.4, 0.06, 0.3, "dry")                                        # camo cape
     b.block(0, -0.2, 0.46, 0.34, 0.06, 0.34, "dry")
-    b.cyl((0.12, 0.85, 0.67), 0.022, 0.6, "metal", seg=8, axis="y")                      # long barrel
-    b.cyl((0.12, 1.16, 0.67), 0.034, 0.1, "black", seg=8, axis="y")                      # suppressor
-    b.cyl((0.12, 0.35, 0.76), 0.04, 0.34, "black", seg=8, axis="y")                      # big scope
+    b.cyl((0.12, 0.85, 0.67), 0.022, 0.6, "metal", seg=6, axis="y")                      # long barrel
+    b.cyl((0.12, 1.16, 0.67), 0.034, 0.1, "black", seg=6, axis="y")                      # suppressor
+    b.cyl((0.12, 0.35, 0.76), 0.04, 0.34, "black", seg=6, axis="y")                      # big scope
     for sx in (-0.05, 0.05):
         b.block(0.12 + sx, 0.9, 0.5, 0.015, 0.015, 0.18, "metal")                        # bipod legs
 
@@ -527,30 +549,31 @@ def armored_car_hd(b):
             b.cyl((sx, sy, 0.26), 0.26, 0.22, "tire", seg=10, axis="x")
             b.cyl((sx + out * 0.12, sy, 0.26), 0.12, 0.04, "metal_light", seg=8, axis="x")
     b.block(0, 0, 0.18, 1.1, 2.4, 0.18, "black")                                         # underbody
-    b.box((0, 0, 0.64), (1.3, 2.3, 0.62), "team", top_front_drop=0.1)                    # hull
-    b.block(0, 1.02, 0.46, 1.2, 0.2, 0.34, "team_dark")                                  # sloped nose plate
+    b.box((0, 0, 0.64), (1.3, 2.3, 0.62), "olive", top_front_drop=0.1)                    # hull
+    b.block(0, 1.02, 0.46, 1.2, 0.2, 0.34, "olive_dark")                                  # sloped nose plate
     for i in range(3):
         b.block(-0.35 + i * 0.35, 1.14, 0.58, 0.28, 0.03, 0.05, "black")                 # vision slits
     for sx in (-0.5, 0.5):
         b.block(sx, 1.15, 0.5, 0.14, 0.05, 0.09, "yellow")                               # headlights
     for sx in (-0.66, 0.66):
-        b.block(sx, 0.2, 0.74, 0.06, 0.9, 0.22, "team_dark")                             # side armour
+        b.block(sx, 0.2, 0.74, 0.06, 0.9, 0.22, "olive_dark")                             # side armour
         b.block(sx, 0.2, 0.9, 0.04, 0.5, 0.05, "black")                                  # firing port
-    b.block(0, -0.9, 0.98, 1.0, 0.5, 0.08, "team_dark")                                  # engine deck
+    b.block(0, -0.9, 0.98, 1.0, 0.5, 0.08, "olive_dark")                                  # engine deck
     for i in range(5):
         b.block(-0.36 + i * 0.18, -0.9, 1.04, 0.08, 0.38, 0.025, "black")                # grille slats
-    b.cyl((0, 0.1, 1.08), 0.44, 0.1, "team_dark", seg=10)                                # turret ring
-    b.cyl((0, 0.1, 1.28), 0.38, 0.3, "team", seg=10)                                     # turret
-    b.cyl((0, 0.1, 1.44), 0.3, 0.04, "team_dark", seg=10)
+    b.cyl((0, 0.1, 1.08), 0.44, 0.1, "olive_dark", seg=10)                                # turret ring
+    b.cyl((0, 0.1, 1.28), 0.38, 0.3, "olive", seg=10)                                     # turret
+    b.cyl((0, 0.1, 1.44), 0.3, 0.04, "team", seg=10)
     b.cyl((0, 0.85, 1.3), 0.06, 1.0, "metal", seg=8, axis="y")                           # autocannon
     b.cyl((0, 1.38, 1.3), 0.085, 0.12, "black", seg=8, axis="y")
     b.cyl((0.14, 0.7, 1.36), 0.03, 0.6, "black", seg=6, axis="y")                        # coax gun
-    b.cyl((-0.22, -0.05, 1.5), 0.11, 0.06, "team_dark", seg=8)                           # hatch
+    b.cyl((-0.22, -0.05, 1.5), 0.11, 0.06, "olive_dark", seg=8)                           # hatch
     b.block(0.28, 0.35, 1.52, 0.2, 0.08, 0.1, "glass")                                   # sight
     b.cyl((0.3, -0.5, 1.75), 0.015, 0.7, "black", seg=4)                                 # antenna
     b.block(0, -1.2, 0.5, 0.9, 0.1, 0.12, "metal")                                       # rear bumper
     b.block(0.5, -1.15, 0.9, 0.32, 0.2, 0.2, "crate")                                    # rear stowage
-
+    b.block(0, 1.08, 0.78, 0.7, 0.1, 0.03, "team")                                       # nose stripe
+    b.block(0, -1.05, 0.96, 0.7, 0.08, 0.1, "team")                                      # rear panel
 
 def hq_hd(b):
     # Footprint 4 x 4 cells: everything stays within +-1.95. Door on the -Y side (towards the camera).
@@ -566,8 +589,8 @@ def hq_hd(b):
     b.block(0, 0.1, 1.17, 2.5, 2.5, 0.85, "sand_light")                                  # upper tier
     for i in range(6):
         b.block(-1.0 + i * 0.4, -1.17, 1.17, 0.07, 0.05, 0.85, "sand_wall")              # upper ribs
-    b.block(0, 0.1, 2.02, 2.7, 2.7, 0.14, "team_dark")                                   # roof
-    b.block(0, 0.1, 2.16, 2.4, 2.4, 0.05, "team")                                        # roof inlay
+    b.block(0, 0.1, 2.02, 2.7, 2.7, 0.14, "concrete")                                   # roof
+    b.block(0, 0.1, 2.16, 2.4, 2.4, 0.05, "sand_dark")                                        # roof inlay
     b.block(0, -1.75, 0.12, 0.9, 0.08, 0.8, "black")                                     # door
     b.block(0, -1.78, 0.92, 1.1, 0.1, 0.14, "team")                                      # sign
     for sx in (-0.5, 0.5):
@@ -603,13 +626,14 @@ def hq_hd(b):
         b.block(1.35 + (i % 2) * 0.3, 1.85 + 0.0, 0.12 + (i // 2) * 0.3, 0.26, 0.24, 0.28, "crate")
     b.cyl((-1.4, 1.85, 0.4), 0.16, 0.56, "olive_dark", seg=8)                            # barrels
     b.cyl((-1.05, 1.85, 0.4), 0.16, 0.56, "olive", seg=8)
-
+    b.block(0, 0.1, 2.21, 1.2, 1.2, 0.04, "team")                                        # team emblem on the roof
+    b.block(0, 0.1, 2.25, 0.5, 0.5, 0.04, "white")
 
 def power_plant_hd(b):
     # Footprint 2 x 2 cells: within +-0.95.
     b.block(0, 0, 0, 1.9, 1.9, 0.14, "concrete")
-    b.block(-0.38, 0.12, 0.14, 0.95, 1.1, 0.72, "team")                                  # generator housing
-    b.block(-0.38, 0.12, 0.86, 1.05, 1.2, 0.07, "team_dark")
+    b.block(-0.38, 0.12, 0.14, 0.95, 1.1, 0.72, "metal")                                  # generator housing
+    b.block(-0.38, 0.12, 0.86, 1.05, 1.2, 0.07, "metal_light")
     for i in range(4):
         b.block(-0.7 + i * 0.22, -0.45, 0.3, 0.08, 0.04, 0.42, "black")                  # louvres
     b.block(-0.38, -0.5, 0.14, 0.9, 0.05, 0.12, "metal")                                 # skid
@@ -630,7 +654,7 @@ def power_plant_hd(b):
     b.block(-0.85, -0.7, 0.14, 0.18, 0.2, 0.22, "crate")
     b.cyl((0.8, -0.85, 0.3), 0.04, 0.6, "black", seg=4)                                  # lamp
     b.block(0.8, -0.85, 0.6, 0.12, 0.1, 0.05, "yellow")
-
+    b.block(-0.38, -0.47, 0.5, 0.95, 0.04, 0.12, "team")                                  # team band
 
 def supply_center_hd(b):
     # Footprint 3 x 3 cells: within +-1.45.
@@ -639,7 +663,7 @@ def supply_center_hd(b):
     for i in range(6):
         b.block(-1.15 + i * 0.46, -0.27, 0.1, 0.06, 0.04, 0.75, "sand_dark")
     b.gable((0, 0.55, 0.85), (2.7, 1.6, 0.5), "sand_dark", overhang=0.1)                 # roof
-    b.block(0, 0.55, 1.33, 2.75, 0.07, 0.05, "team_dark")                                # ridge
+    b.block(0, 0.55, 1.33, 2.75, 0.07, 0.05, "sand_dark")                                # ridge
     for i in range(3):
         b.block(-0.8 + i * 0.8, 0.9, 1.0, 0.3, 0.24, 0.06, "metal")                      # roof vents
     b.block(-0.7, -0.26, 0.1, 0.95, 0.06, 0.62, "black")                                 # roller door
@@ -709,14 +733,14 @@ def repair_station_hd(b):
         for sy in (-0.7, 0.55):
             b.block(sx, sy, 0.08, 0.12, 0.12, 1.15, "metal_light")                       # gantry posts
     for sy in (-0.7, 0.55):
-        b.block(0, sy, 1.18, 1.7, 0.14, 0.12, "team")                                    # cross beams
+        b.block(0, sy, 1.18, 1.7, 0.14, 0.12, "metal")                                    # cross beams
     for sx in (-0.78, 0.78):
-        b.block(sx, -0.08, 1.18, 0.14, 1.4, 0.12, "team_dark")                           # side beams
+        b.block(sx, -0.08, 1.18, 0.14, 1.4, 0.12, "metal")                           # side beams
     b.block(0, -0.08, 1.12, 0.3, 0.4, 0.2, "metal")                                      # crane trolley
     b.cyl((0, -0.08, 0.85), 0.02, 0.5, "black", seg=4)                                   # cable
     b.block(0, -0.08, 0.62, 0.16, 0.12, 0.1, "yellow")                                   # hook block
     b.block(-0.55, 0.75, 0.08, 0.5, 0.3, 0.55, "sand_dark")                              # tool shed
-    b.block(-0.55, 0.75, 0.63, 0.56, 0.36, 0.05, "team_dark")
+    b.block(-0.55, 0.75, 0.63, 0.56, 0.36, 0.05, "team")
     b.block(-0.55, 0.58, 0.12, 0.26, 0.04, 0.4, "black")
     b.block(0.5, 0.78, 0.08, 0.4, 0.3, 0.3, "crate")                                     # parts
     b.cyl((0.82, 0.8, 0.2), 0.12, 0.4, "olive_dark", seg=8)
@@ -746,8 +770,8 @@ def tower_hd(b):
     b.block(0, -0.64, 1.72, 0.7, 0.05, 0.08, "black")                                    # firing slit
     for sx in (-0.55, 0.55):
         b.block(sx, 0.4, 1.62, 0.25, 0.25, 0.34, "crate")                                # ammo boxes
-    b.cyl((0, 0, 1.72), 0.3, 0.14, "team_dark", seg=10)                                  # turret base
-    b.cyl((0, 0, 1.9), 0.26, 0.24, "team", seg=10)                                       # turret
+    b.cyl((0, 0, 1.72), 0.3, 0.14, "concrete", seg=10)                                  # turret base
+    b.cyl((0, 0, 1.9), 0.26, 0.24, "metal", seg=10)                                       # turret
     b.cyl((0, 0.55, 1.92), 0.045, 0.9, "metal", seg=8, axis="y")                         # barrel
     b.cyl((0, 1.0, 1.92), 0.07, 0.1, "black", seg=8, axis="y")
     b.block(0, 0.1, 2.06, 0.2, 0.2, 0.06, "glass")                                       # sight

@@ -254,7 +254,10 @@ public static class GameBuild
         var palette = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/Textures/palette.png");
         if (palette == null) throw new Exception("palette.png not found (run art/blender/generate_assets.py)");
 
-        Material paletteMat = LitMaterial("Palette", Color.white, palette);
+        Material paletteMat = LoadOrCreate("Palette", "IronDoctrine/PaletteWeathered");
+        paletteMat.SetTexture("_BaseMap", palette);
+        paletteMat.mainTexture = palette;
+        EditorUtility.SetDirty(paletteMat);
         Material groundMat = LitMaterial("Ground", Color.white);
         Material ringMat = UnlitMaterial("SelectionRing", new Color(0.35f, 1f, 0.45f));
         Material markerMat = UnlitMaterial("TapMarker", new Color(1f, 0.9f, 0.3f));

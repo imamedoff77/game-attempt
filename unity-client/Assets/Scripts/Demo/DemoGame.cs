@@ -358,7 +358,7 @@ public sealed partial class DemoGame : MonoBehaviour
         _terrain.Build(World.Map, groundMaterial, overlayMaterial, rockModels, palmModel, cactusModel, bushModel, paletteMaterial, home, 8);
         SyncBuildingViews();
         SyncUnitViews();
-        Cam.Init(new Vector3(home.x, 0f, home.y + 2f), MapSize);
+        Cam.Init(new Vector3(home.x, 0f, home.y + 5f), MapSize);
     }
 
     // ---- online ----
@@ -450,7 +450,7 @@ public sealed partial class DemoGame : MonoBehaviour
                 {
                     _views[unit.Id] = UnitView.Create(unit, UnitModel(unit.Kind),
                         unit.Team != LocalTeam ? _enemyPalette : paletteMaterial, ringMaterial, _arcMaterial,
-                        IsBorrowed(unit.Kind) ? BorrowedScale(unit.Kind) : Vector3.one);
+                        IsBorrowed(unit.Kind) ? BorrowedScale(unit.Kind) : Vector3.one * 1.25f);
                     if (_countStats && unit.Team == LocalTeam) { UnitsBuilt++; Sfx.Play("ready", 0.5f, 0.03f, 0.3f); }
                 }
 

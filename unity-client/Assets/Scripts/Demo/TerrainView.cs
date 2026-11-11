@@ -31,6 +31,8 @@ public sealed class TerrainView : MonoBehaviour
         var ground = MeshFactory.Spawn("Ground", MeshFactory.Quad(map.Width + 2 * Pad, map.Height + 2 * Pad),
             new Material(groundMaterial) { mainTexture = BuildGroundTexture(map) }, transform);
         ground.transform.localPosition = new Vector3(-Pad, 0f, -Pad);
+        // The ground only receives shadows: casting them made the big flat quad shadow itself (acne bands, a hard diagonal edge).
+        ground.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
 
         // Overlay (hidden until asked for)
         _overlayTexture = new Texture2D(map.Width, map.Height, TextureFormat.RGBA32, false)
@@ -111,7 +113,13 @@ public sealed class TerrainView : MonoBehaviour
 
                 float grain = (Hash(px, py) - 0.5f) * 0.05f;
                 c *= 1f + grain;
-                if (outside) c *= 0.9f; // a faint edge to the battlefield
+                if (outside)
+                {
+                    // Beyond the map the sand slowly darkens (no hard step at the border), so the battlefield edge reads as haze.
+                    float dx = Mathf.Max(Mathf.Max(-cx, cx - map.Width), 0f), dz = Mathf.Max(Mathf.Max(-cz, cz - map.Height), 0f);
+                    float t = Mathf.Clamp01(Mathf.Sqrt(dx * dx + dz * dz) / 14f);
+                    c *= 1f - 0.16f * t * t * (3f - 2f * t);
+                }
                 pixels[py * w + px] = new Color(c.r, c.g, c.b, 1f);
             }
         }
