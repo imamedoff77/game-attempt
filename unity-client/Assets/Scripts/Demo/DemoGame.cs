@@ -152,6 +152,7 @@ public sealed partial class DemoGame : MonoBehaviour
     private void Start()
     {
         Application.targetFrameRate = 60;
+        ShippedLook.Apply();
         Screen.sleepTimeout = SleepTimeout.NeverSleep; // a match against the computer can go minutes without a touch
 
         bool ok = SimCoreSelfTest.Run(out string failure);
@@ -216,7 +217,7 @@ public sealed partial class DemoGame : MonoBehaviour
         TutorialStep = number == 1 && !_tutorialDone ? 0 : -1;
         Building hq = null;
         foreach (Building b in Mission.World.Buildings) if (b.Team == 0 && b.Kind == BuildingKind.Hq) hq = b;
-        LoadWorld(Mission.World, hq != null ? new Vector2Int(hq.X, hq.Y) : new Vector2Int(8, 8), 0);
+        LoadWorld(Mission.World, hq != null ? new Vector2Int(hq.X, hq.Y) : new Vector2Int(8, 8), 0, number);
         _ai = null;
         Mode = GameMode.Campaign;
         BeginPlay();
@@ -338,8 +339,10 @@ public sealed partial class DemoGame : MonoBehaviour
     }
 
     /// <summary>Shows a (new) world: terrain, views and camera. The old world, if any, is thrown away.</summary>
-    private void LoadWorld(World world, Vector2Int home, int localTeam)
+    private void LoadWorld(World world, Vector2Int home, int localTeam, int mission = 0)
     {
+        MissionTheme.Current = MissionTheme.For(mission);
+        if (Camera.main != null) Camera.main.backgroundColor = MissionTheme.Current.Background;
         CancelPlacement();
         ClearSelection();
         foreach (UnitView v in _views.Values) Destroy(v.gameObject);
@@ -462,6 +465,8 @@ public sealed partial class DemoGame : MonoBehaviour
                 Fx.Explosion(_views[id].transform.position, 1.6f);
                 Sfx.PlayAt(_views[id].transform.position, "explosion_small", 0.6f, 0.06f);
                 if (_countStats) { if (_views[id].Team == LocalTeam) UnitsLost++; else EnemiesDestroyed++; }
+                ScorchMark.Spawn(_views[id].transform.position, _views[id].IsVehicle ? 1.5f : 0.7f, overlayMaterial);
+                if (_views[id].IsVehicle) Wreck.Spawn(_views[id], _views[id].Team != LocalTeam ? _enemyPalette : paletteMaterial);
                 Destroy(_views[id].gameObject);
                 _views.Remove(id);
                 _selected.Remove(id);

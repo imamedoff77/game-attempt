@@ -20,7 +20,7 @@
 - [x] 3.4 Unity: Kampaniya düyməsi, missiya siyahısı (kilid, ulduzlar), brifinq (mətn, şərtlər, ulduz tələbləri), oyun içi şərt siyahısı + növbəti hücum sayğacı, nəticə kartı (ulduzlar, vaxt, itki, kredit; Növbəti / Yenidən / Menyu), irəliləyiş `PlayerPrefs`-də. Dev build-də debug paneldə "Win mission".
 - [x] 3.5 Telefonda yoxlandı: menyu → siyahı → brifinq → missiya → fasilə/təslim → nəticə kartı → qələbə kartı (ulduz, kredit) → menyu → proqramı bağla/aç → irəliləyiş qalır, 2-ci missiya açılır. Telefonun datası təmizləndi (sınaq irəliləyişi qalmasın).
 - [ ] 3.6 Real oyun sınağı (istifadəçi): missiyaların çətinliyi, brifinq mətnləri, ulduz hədləri. Nəticəyə görə `Campaign.cs` rəqəmləri düzəldilir.
-- [ ] 3.7 Missiya xəritələri üçün real görünüş və hekayə (Faza 7 ilə birlikdə): hazırda hamısı eyni səhra, mətnlər qısa.
+- [x] 3.7 (2026-11-11) Missiya görünüşü və hekayə: hər missiyanın öz torpaq rəngi və səması (`MissionTheme.cs`: səhra, quru çöl, qırmızı torpaq, çınqıl, kanyon, bozqır, bazalt, kül, yanmış torpaq; yalnız görünüş, sim-core-a toxunmur), qələbə kartında hekayə sətri (`mission.N.outro`, testlə yoxlanır). Qalır: fərqli xəritə düzənləri/relyef (sim məsələsi) və uzun hekayə.
 
 ## Məlum məhdudiyyətlər
 

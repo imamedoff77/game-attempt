@@ -34,6 +34,8 @@ public static class Strings
 
     public static string MissionBrief(int number) => Get("mission." + number + ".brief");
 
+    public static string MissionOutro(int number) => Get("mission." + number + ".outro");
+
     /// <summary>The player-facing text for a failed account call.</summary>
     public static string AccountError(ApiResult result)
     {

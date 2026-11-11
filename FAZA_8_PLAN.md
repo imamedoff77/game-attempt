@@ -6,7 +6,7 @@
 
 - [x] Release build: `GameBuild.BuildAndroidBundle` → `unity-client/Builds/Android/IronDoctrine.aab` (imzalı, release açarı `~/.config/game-keys/`, 32 MB). Play yeni tətbiqlər üçün yalnız .aab qəbul edir. APK üçün `GameBuild.BuildAndroid`.
 - [x] Release qurulmasında debug panel, dev alışı, açıq `http` yoxdur (`insecureHttpOption = DevelopmentOnly`, `Debug.isDebugBuild` yoxlamaları).
-- [x] Avtomatik testlər: sim-core 320, GameServer 42, AccountServer 46.
+- [x] Avtomatik testlər: sim-core 331, GameServer 42, AccountServer 56 (2026-11-11; AccountServer testləri üçün `server/tools/test-db.sh start`).
 
 ## Buraxılışdan əvvəl (Claude)
 
@@ -14,7 +14,7 @@
 - [x] Hostinq sənədi: `server/HOSTING.md` (publish, PostgreSQL + gündəlik yedək, systemd, Caddy HTTPS, firewall). **[İSTİFADƏÇİ]** VPS və domen alır, Claude SSH ilə quraşdırır.
 - [x] Təhqiramiz displayName filtri (FAZA_5 5.5c-2); hesabat düyməsi yoxdur, dəstək e-poçtu ilə.
 - [ ] Zəif telefonda (A34-dən zəif) performans ölçməsi, FPS/RAM; lazım gələrsə grafika səviyyəsi.
-- [x] Mağaza mətni, 512×512 ikon və 1024×500 qrafik: `art/store/` (`LISTING.md`, `make_store_art.py`; ikon və qrafik öz paletimizlə kodla çəkilir, müvəqqəti ad "Iron Doctrine" ilə). Telefon ekran görüntüləri: `art/store/screenshots/` (2026-11-11, dev build-dən qaralamalar; buraxılışdan əvvəl release build-dən yenidən çəkilir, `README.md` bax).
+- [x] Mağaza mətni, 512×512 ikon və 1024×500 qrafik: `art/store/` (`LISTING.md`, `make_store_art.py`; ikon və qrafik öz paletimizlə kodla çəkilir, müvəqqəti ad "Iron Doctrine" ilə). Telefon ekran görüntüləri: `art/store/screenshots/` (2026-11-11, release build-dən, `README.md` bax; mağaza səhifəsi ekranı Play məhsulları olmadan boş görünür, çəkilmədi).
 - [ ] Real art/animasiya/səs (Faza 7): hazırda prosedur modellər və səslər. İstifadəçi "normal qrafikalar olanda" sınaqdan keçirəcək.
 
 ## [İSTİFADƏÇİ] addımları

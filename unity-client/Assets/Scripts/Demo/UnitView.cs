@@ -18,6 +18,8 @@ public sealed class UnitView : MonoBehaviour
 
     public int UnitId => _unit.Id;
     public int Team => _unit.Team;
+    public bool IsVehicle => _vehicle;
+    public Transform Body => _body;
 
     public static UnitView Create(Unit unit, GameObject model, Material palette, Material ringMaterial, Material arcMaterial, Vector3 modelScale)
     {

@@ -266,6 +266,12 @@ public sealed partial class DemoHud
         string text = Strings.Get("campaign.time", Clock(run.Seconds), Clock(m.ParSeconds)) + "\n" + Strings.Get("campaign.losses", run.UnitsLost, m.MaxLosses);
         if (_game.MissionPaid > 0) text += "\n" + Strings.Get("campaign.credits", _game.MissionPaid);
         GUI.Label(new Rect(card.x, card.y + card.height * 0.43f, card.width, card.height * 0.3f), text, small);
+        if (won)
+        {
+            var outro = new GUIStyle(small) { wordWrap = true, fontStyle = FontStyle.Italic, fontSize = Mathf.RoundToInt(Screen.height * 0.03f) };
+            outro.normal.textColor = UiTheme.Dim;
+            GUI.Label(new Rect(card.x + card.width * 0.08f, card.y + card.height * 0.68f, card.width * 0.84f, card.height * 0.14f), Strings.MissionOutro(m.Number), outro);
+        }
 
         bool hasNext = won && m.Number < Campaign.Missions.Count;
         int count = hasNext ? 3 : 2;

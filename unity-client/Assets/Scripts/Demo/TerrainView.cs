@@ -13,9 +13,9 @@ public sealed class TerrainView : MonoBehaviour
     private const int Pad = 24;
     private const int PropPad = 12;
 
-    private static readonly Color Sand = new Color(0.87f, 0.76f, 0.52f);
-    private static readonly Color Stony = new Color(0.66f, 0.58f, 0.47f);
-    private static readonly Color RockGround = new Color(0.55f, 0.48f, 0.40f);
+    private static Color Sand => MissionTheme.Current.Sand;
+    private static Color Stony => MissionTheme.Current.Stony;
+    private static Color RockGround => MissionTheme.Current.Rock;
     private static readonly Color Water = new Color(0.20f, 0.50f, 0.68f);
 
     private GameObject _overlay;
@@ -106,8 +106,8 @@ public sealed class TerrainView : MonoBehaviour
                     // Wind-blown ripples, hardpan patches and bleached flats so the open sand is not one flat colour.
                     float ripple = 0.03f * Mathf.Sin((cx * 0.9f + cz * 0.45f) * 2.2f + 4f * Fbm(cx * 0.08f, cz * 0.08f));
                     float patch = Fbm(cx * 0.045f + 11f, cz * 0.045f + 3f);
-                    if (patch > 0.58f) c = Color.Lerp(c, new Color(0.70f, 0.58f, 0.42f), Mathf.Clamp01((patch - 0.58f) * 5f) * 0.55f);   // hardpan
-                    else if (patch < 0.36f) c = Color.Lerp(c, new Color(0.93f, 0.84f, 0.62f), Mathf.Clamp01((0.36f - patch) * 5f) * 0.45f); // pale sand
+                    if (patch > 0.58f) c = Color.Lerp(c, Sand * 0.8f, Mathf.Clamp01((patch - 0.58f) * 5f) * 0.55f);   // hardpan
+                    else if (patch < 0.36f) c = Color.Lerp(c, Sand * 1.07f, Mathf.Clamp01((0.36f - patch) * 5f) * 0.45f); // pale sand
                     c *= 1f + ripple;
                 }
 

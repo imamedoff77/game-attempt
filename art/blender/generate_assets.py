@@ -410,8 +410,6 @@ def tank_hd(b):
             b.cyl((sx + out * 0.265, -0.88 + i * 0.29, 0.22), 0.07, 0.03, "tire", seg=8, axis="x")    # hubs
         b.cyl((sx + out * 0.24, 1.08, 0.3), 0.2, 0.08, "metal_light", seg=12, axis="x")               # idler
         b.cyl((sx + out * 0.24, -1.08, 0.3), 0.2, 0.08, "metal_light", seg=12, axis="x")              # sprocket
-        for i in range(4):
-            b.cyl((sx, -0.6 + i * 0.4, 0.46), 0.05, 0.4, "metal", seg=6, axis="x")                    # return rollers
         for i in range(10):
             b.block(sx, -1.0 + i * 0.22, 0.0, 0.5, 0.1, 0.06, "black")                                 # track pads
     b.box((0, -0.05, 0.62), (1.14, 2.0, 0.34), "olive", top_front_drop=0.12)    # hull
@@ -420,8 +418,8 @@ def tank_hd(b):
     for i in range(7):
         b.block(-0.36 + i * 0.12, -0.62, 0.86, 0.06, 0.5, 0.025, "black")      # grille slats
     b.block(0, 0.05, 0.79, 0.8, 0.2, 0.05, "olive_dark")                       # turret ring
-    b.cyl((0, -0.08, 0.98), 0.5, 0.3, "olive", seg=12)                          # turret
-    b.cyl((0, -0.08, 1.14), 0.42, 0.04, "olive_dark", seg=12)                   # turret roof
+    b.cyl((0, -0.08, 0.98), 0.5, 0.3, "olive", seg=20)                          # turret
+    b.cyl((0, -0.08, 1.14), 0.42, 0.04, "olive_dark", seg=20)                   # turret roof
     b.block(0, 0.4, 0.88, 0.5, 0.25, 0.26, "olive_dark")                        # gun mantlet
     b.cyl((0, 1.0, 1.0), 0.075, 1.3, "metal", seg=10, axis="y")                # barrel
     b.cyl((0, 1.55, 1.0), 0.1, 0.15, "black", seg=10, axis="y")                # muzzle brake
