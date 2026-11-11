@@ -303,6 +303,8 @@ namespace SimCore
                 if (u.KitCarry != 0) h.Add(u.KitCarry);
                 h.Add(u.Marching ? 1 : 0);
                 h.Add(u.Facing);
+                if (u.Hold) h.Add(2);
+                if (u.AttackMoving) { h.Add(3); h.Add(u.AttackMoveGoal); }
             }
             return h.Value;
         }
@@ -346,6 +348,9 @@ namespace SimCore
                     case CancelBuildCommand cancelBuild: ApplyCancelBuild(cancelBuild); break;
                     case UpgradeBaseCommand upgrade: ApplyUpgradeBase(upgrade); break;
                     case ResearchCommand research: ApplyResearch(research); break;
+                    case StopCommand stop: ApplyStop(stop.UnitIds, stop.Team, false); break;
+                    case HoldCommand hold: ApplyStop(hold.UnitIds, hold.Team, true); break;
+                    case AttackMoveCommand attackMove: ApplyAttackMove(attackMove); break;
                     case SurrenderCommand surrender: _players[surrender.Team].Surrendered = true; break;
                 }
             }
@@ -371,9 +376,53 @@ namespace SimCore
             for (int i = 0; i < units.Count; i++)
             {
                 ClearTarget(units[i]); // a move order cancels an attack order
+                units[i].Hold = false;
+                units[i].AttackMoving = false;
                 units[i].SpeedCap = cap;
                 GoTo(units[i], ClampToMap(cmd.Target + offsets[i]));
                 units[i].Marching = units[i].Moving;
+            }
+        }
+
+        private void ApplyStop(int[] unitIds, int team, bool hold)
+        {
+            foreach (int id in unitIds)
+            {
+                Unit u = GetUnit(id);
+                if (u == null || u.Team != team) continue;
+                ClearTarget(u);
+                Stop(u);
+                u.AttackMoving = false;
+                u.Hold = hold;
+            }
+        }
+
+        private void ApplyAttackMove(AttackMoveCommand cmd)
+        {
+            var units = new List<Unit>(cmd.UnitIds.Length);
+            Fix64 spacing = FormationSpacing;
+            foreach (int id in cmd.UnitIds)
+            {
+                Unit u = GetUnit(id);
+                if (u == null || u.Team != cmd.Team) continue;
+                units.Add(u);
+                Fix64 wide = u.Radius * Fix64.FromInt(2) + FormationGap;
+                if (wide > spacing) spacing = wide;
+            }
+            if (units.Count == 0) return;
+
+            Fix64 cap = SlowestStep(units, cmd.Team);
+            Vec2[] offsets = AssignSlots(units, FormationOffsets(units.Count, spacing), cmd.Target);
+            for (int i = 0; i < units.Count; i++)
+            {
+                ClearTarget(units[i]);
+                units[i].SpeedCap = cap;
+                units[i].Hold = false;
+                Vec2 goal = ClampToMap(cmd.Target + offsets[i]);
+                GoTo(units[i], goal);
+                units[i].Marching = false; // a full fight (stop, chase) is allowed on the way
+                units[i].AttackMoving = units[i].Moving;
+                units[i].AttackMoveGoal = goal;
             }
         }
 
@@ -407,6 +456,8 @@ namespace SimCore
                 if (u.Team != cmd.Team) continue;
                 u.SpeedCap = cap;
                 u.Marching = false;
+                u.Hold = false;
+                u.AttackMoving = false;
                 u.AttackKind = cmd.TargetKind;
                 u.AttackId = cmd.TargetId;
                 u.Ordered = true;
@@ -795,12 +846,13 @@ namespace SimCore
             }
 
             // Look for something to shoot: units that stand still (and computer guards, even on patrol) notice enemies.
-            if (u.AttackKind == AttackKind.None && (!u.Moving || u.Guard) && (Tick + u.Phase) % 5 == 0)
+            if (u.AttackKind == AttackKind.None && (!u.Moving || u.Guard || u.AttackMoving) && (Tick + u.Phase) % 5 == 0)
                 Acquire(u, def, enemyTeam);
 
             if (u.AttackKind == AttackKind.None)
             {
                 if (u.Guard) GuardIdle(u);
+                else if (u.AttackMoving && !u.Moving && (Tick + u.Phase) % 5 == 0) ResumeAttackMove(u);
                 return;
             }
 
@@ -822,6 +874,9 @@ namespace SimCore
                 if (u.Cooldown == 0) Fire(u, def, aim);
                 return;
             }
+
+            // Holding position: never leave the spot, drop a target that is out of weapon range.
+            if (u.Hold) { ClearTarget(u); return; }
 
             // Out of range: give up on automatic targets that got away, otherwise chase.
             if (!u.Ordered)
@@ -910,9 +965,20 @@ namespace SimCore
 
         private static readonly Fix64 GuardLeash = Fix64.FromInt(14);
 
+        /// <summary>An attack-moving unit has dealt with its enemy: walk on to the goal, or finish when it is there.</summary>
+        private void ResumeAttackMove(Unit u)
+        {
+            if ((u.Pos - u.AttackMoveGoal).SqrLength <= AttackMoveArrive * AttackMoveArrive) { u.AttackMoving = false; return; }
+            GoTo(u, u.AttackMoveGoal);
+            if (!u.Moving) u.AttackMoving = false;
+        }
+
+        private static readonly Fix64 AttackMoveArrive = Fix64.FromFraction(3, 2);
+
         private void Acquire(Unit u, CombatDef def, int enemyTeam)
         {
-            Fix64 sight2 = def.Sight * def.Sight;
+            Fix64 reach = u.Hold ? def.Range : def.Sight; // a unit holding position only notices what it can shoot
+            Fix64 sight2 = reach * reach;
             Fix64 best = sight2 + Fix64.One;
             Unit bestUnit = null;
             foreach (Unit t in _units)

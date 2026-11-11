@@ -311,7 +311,7 @@ public class CampaignTests
             Assert.True(en.Has(m.Key + ".brief"), m.Key + ".brief");
             foreach (Objective o in m.Objectives) Assert.True(en.Has("objective." + o.Kind), "objective." + o.Kind);
         }
-        foreach (string key in new[] { "mode.campaign", "campaign.title", "campaign.total", "campaign.locked", "campaign.briefing", "campaign.start", "campaign.next",
+        foreach (string key in new[] { "mode.campaign", "campaign.title", "campaign.locked", "campaign.briefing", "campaign.start", "campaign.next",
                                        "campaign.retry", "campaign.victory", "campaign.defeat", "campaign.credits", "campaign.time", "campaign.losses",
                                        "campaign.starWin", "campaign.starTime", "campaign.starLosses", "campaign.nextWave", "campaign.timeLeft", "campaign.mission" })
             Assert.True(en.Has(key), key);

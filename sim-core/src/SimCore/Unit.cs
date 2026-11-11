@@ -18,6 +18,12 @@ namespace SimCore
         /// <summary>True while following a move order from the player: shoots at what is in its firing arc, but never stops or chases.</summary>
         public bool Marching { get; internal set; }
 
+        /// <summary>Hold position: shoots only what is in weapon range and never chases.</summary>
+        public bool Hold { get; internal set; }
+        /// <summary>Attack-move: walking to <see cref="AttackMoveGoal"/>, fighting whatever it meets, then carrying on.</summary>
+        public bool AttackMoving { get; internal set; }
+        public Vec2 AttackMoveGoal { get; internal set; }
+
         /// <summary>Unit vector the unit faces. Follows the way it moves; a standing unit turns towards its target.</summary>
         public Vec2 Facing { get; internal set; }
 

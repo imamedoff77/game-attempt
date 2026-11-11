@@ -18,7 +18,7 @@ namespace SimCore
         /// <summary>Map coordinates beyond this are never valid (keeps later arithmetic far from overflow).</summary>
         private const int MaxCoordinate = 4096;
 
-        private const byte TypeMove = 1, TypeBuild = 2, TypeQueue = 3, TypeCancel = 4, TypeRally = 5, TypeAttack = 6, TypeCancelBuild = 7, TypeUpgradeBase = 8, TypeResearch = 9, TypeSurrender = 10;
+        private const byte TypeMove = 1, TypeBuild = 2, TypeQueue = 3, TypeCancel = 4, TypeRally = 5, TypeAttack = 6, TypeCancelBuild = 7, TypeUpgradeBase = 8, TypeResearch = 9, TypeSurrender = 10, TypeStop = 11, TypeHold = 12, TypeAttackMove = 13;
 
         // ---------------------------------------------------------------- one command
 
@@ -127,6 +127,19 @@ namespace SimCore
                 case SurrenderCommand _:
                     w.WriteByte(TypeSurrender);
                     break;
+                case StopCommand st:
+                    w.WriteByte(TypeStop);
+                    WriteIds(w, st.UnitIds);
+                    break;
+                case HoldCommand ho:
+                    w.WriteByte(TypeHold);
+                    WriteIds(w, ho.UnitIds);
+                    break;
+                case AttackMoveCommand am:
+                    w.WriteByte(TypeAttackMove);
+                    WriteIds(w, am.UnitIds);
+                    w.WriteVec(am.Target);
+                    break;
                 default:
                     throw new ArgumentException("unknown command type " + (command == null ? "null" : command.GetType().Name));
             }
@@ -204,6 +217,24 @@ namespace SimCore
                 case TypeSurrender:
                     command = new SurrenderCommand();
                     return true;
+                case TypeStop:
+                    {
+                        if (!TryReadIds(r, out int[] ids)) return false;
+                        command = new StopCommand(ids);
+                        return true;
+                    }
+                case TypeHold:
+                    {
+                        if (!TryReadIds(r, out int[] ids)) return false;
+                        command = new HoldCommand(ids);
+                        return true;
+                    }
+                case TypeAttackMove:
+                    {
+                        if (!TryReadIds(r, out int[] ids) || !TryReadVec(r, out Vec2 target)) return false;
+                        command = new AttackMoveCommand(ids, target);
+                        return true;
+                    }
                 default:
                     return false;
             }

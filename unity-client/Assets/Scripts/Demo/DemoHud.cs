@@ -97,6 +97,8 @@ public sealed partial class DemoHud : MonoBehaviour
         if (_menuOpen && !_game.Placing) DrawBuildMenu(world);
         if (_game.SelectedBuilding != null && !_game.Placing) DrawBuildingPanel(world, _game.SelectedBuilding);
         if (SelectionBarVisible) DrawSelectionBar(world);
+        if (OrderButtonsVisible) DrawOrderButtons();
+        else if (_game.AttackMovePending) _game.AttackMovePending = false;
         DrawToasts();
         if (_game.SettingRally) DrawHint(Strings.Get("hint.rally"));
 
@@ -524,9 +526,14 @@ public sealed partial class DemoHud : MonoBehaviour
     {
         float pad = Screen.height * 0.02f;
         float y = Screen.height - Screen.height * 0.11f - Screen.height * 0.015f - Screen.height * 0.12f;
-        var rect = new Rect(Screen.width - Screen.width * 0.5f - pad, y, Screen.width * 0.5f, Screen.height * 0.1f);
-        GUI.Box(rect, "");
-        GUI.Label(rect, text, _label);
+        DrawHintAt(new Rect(Screen.width - Screen.width * 0.5f - pad, y, Screen.width * 0.5f, Screen.height * 0.1f), text);
+    }
+
+    // A dark plate with an orange stripe and one or two lines of text.
+    private void DrawHintAt(Rect rect, string text)
+    {
+        StripePlate(rect, UiTheme.Accent);
+        PageText(new Rect(rect.x + rect.height * 0.3f, rect.y, rect.width - rect.height * 0.4f, rect.height), text, 0.034f, UiTheme.Bone, TextAnchor.MiddleLeft, true, true);
     }
 
     private void DrawPlacementHint()
@@ -582,6 +589,8 @@ public sealed partial class DemoHud : MonoBehaviour
             if (!_game.SelectedBuilding.UnderConstruction)
                 foreach (Rect r in CardRects(BuildingCardCount(_game.SelectedBuilding))) yield return r;
         }
+        if (OrderButtonsVisible)
+            foreach (Rect r in OrderRects()) yield return r;
         if (SelectionBarVisible)
         {
             RefreshSelectionGroups(_game.World);

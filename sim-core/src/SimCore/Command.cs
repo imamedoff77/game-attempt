@@ -119,4 +119,39 @@ namespace SimCore
     public sealed class SurrenderCommand : Command
     {
     }
+
+    /// <summary>Order to halt: drop the current move or attack order and stand still (an idle unit shoots what comes in sight).</summary>
+    public sealed class StopCommand : Command
+    {
+        public int[] UnitIds { get; }
+
+        public StopCommand(int[] unitIds)
+        {
+            UnitIds = unitIds;
+        }
+    }
+
+    /// <summary>Order to hold position: stand still and shoot only what comes into weapon range, never chasing.</summary>
+    public sealed class HoldCommand : Command
+    {
+        public int[] UnitIds { get; }
+
+        public HoldCommand(int[] unitIds)
+        {
+            UnitIds = unitIds;
+        }
+    }
+
+    /// <summary>Order to move to a point and fight whatever is met on the way, then carry on.</summary>
+    public sealed class AttackMoveCommand : Command
+    {
+        public int[] UnitIds { get; }
+        public Vec2 Target { get; }
+
+        public AttackMoveCommand(int[] unitIds, Vec2 target)
+        {
+            UnitIds = unitIds;
+            Target = target;
+        }
+    }
 }

@@ -77,6 +77,8 @@ public sealed partial class DemoGame : MonoBehaviour
     public Building SelectedBuilding => _selectedBuilding;
     /// <summary>True after "Toplanma nöqtəsi" was pressed: the next tap on the map sets the rally point.</summary>
     public bool SettingRally { get; private set; }
+    /// <summary>The next tap on the ground sends the selected units to fight their way there (attack-move).</summary>
+    public bool AttackMovePending { get; set; }
 
     public bool Placing => _ghost != null;
     public BuildingKind PlacingKind => _placingKind;
@@ -753,6 +755,19 @@ public sealed partial class DemoGame : MonoBehaviour
             return;
         }
 
+        if (AttackMovePending)
+        {
+            AttackMovePending = false;
+            if (_selected.Count > 0 && Cam.GroundPoint(screen, out Vector3 spot))
+            {
+                var moveIds = new int[_selected.Count];
+                _selected.CopyTo(moveIds);
+                Issue(new AttackMoveCommand(moveIds, ToVec2(spot)));
+                TapMarker.Spawn(spot, markerMaterial);
+            }
+            return;
+        }
+
         int unitId = PickUnit(screen, LocalTeam);
 
         // Tapping an enemy with units selected = attack order.
@@ -805,6 +820,39 @@ public sealed partial class DemoGame : MonoBehaviour
             OrderMove(ground);
     }
 
+    public void OrderStop()
+    {
+        AttackMovePending = false;
+        if (_selected.Count == 0) return;
+        var ids = new int[_selected.Count];
+        _selected.CopyTo(ids);
+        Issue(new StopCommand(ids));
+    }
+
+    public void OrderHold()
+    {
+        AttackMovePending = false;
+        if (_selected.Count == 0) return;
+        var ids = new int[_selected.Count];
+        _selected.CopyTo(ids);
+        Issue(new HoldCommand(ids));
+    }
+
+    /// <summary>True when every selected unit is holding position.</summary>
+    public bool SelectionHolding
+    {
+        get
+        {
+            if (World == null || _selected.Count == 0) return false;
+            foreach (int id in _selected)
+            {
+                Unit u = World.GetUnit(id);
+                if (u != null && !u.Hold) return false;
+            }
+            return true;
+        }
+    }
+
     public void SelectInRect(Rect screenRect)
     {
         _selectedBuilding = null;
@@ -830,6 +878,7 @@ public sealed partial class DemoGame : MonoBehaviour
         _selected.Clear();
         _selectedBuilding = null;
         SettingRally = false;
+        AttackMovePending = false;
     }
 
     public void ToggleBuildOverlay() => _terrain.SetOverlayVisible(!_terrain.OverlayVisible);

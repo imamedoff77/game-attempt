@@ -100,6 +100,13 @@ public sealed class TerrainView : MonoBehaviour
                     // Slow, wide ripples so the sand reads like dunes.
                     float dune = 0.045f * Mathf.Sin(cx * 0.35f + 2f * Mathf.Sin(cz * 0.17f)) + 0.03f * Mathf.Sin(cz * 0.5f + cx * 0.12f);
                     c *= 1f + dune;
+
+                    // Wind-blown ripples, hardpan patches and bleached flats so the open sand is not one flat colour.
+                    float ripple = 0.03f * Mathf.Sin((cx * 0.9f + cz * 0.45f) * 2.2f + 4f * Fbm(cx * 0.08f, cz * 0.08f));
+                    float patch = Fbm(cx * 0.045f + 11f, cz * 0.045f + 3f);
+                    if (patch > 0.58f) c = Color.Lerp(c, new Color(0.70f, 0.58f, 0.42f), Mathf.Clamp01((patch - 0.58f) * 5f) * 0.55f);   // hardpan
+                    else if (patch < 0.36f) c = Color.Lerp(c, new Color(0.93f, 0.84f, 0.62f), Mathf.Clamp01((0.36f - patch) * 5f) * 0.45f); // pale sand
+                    c *= 1f + ripple;
                 }
 
                 float grain = (Hash(px, py) - 0.5f) * 0.05f;
@@ -133,6 +140,20 @@ public sealed class TerrainView : MonoBehaviour
         TerrainType t = map.GetTerrain(x, z);
         Color baseColor = (t == TerrainType.Stony || t == TerrainType.Rock) ? Stony : Sand;
         return baseColor * (0.97f + 0.06f * Hash(x * 7 + 3, z * 13 + 5));
+    }
+
+    // Two octaves of smooth value noise in 0..1.
+    private static float Fbm(float x, float y) => 0.65f * ValueNoise(x, y) + 0.35f * ValueNoise(x * 2.3f + 5f, y * 2.3f + 9f);
+
+    private static float ValueNoise(float x, float y)
+    {
+        int x0 = Mathf.FloorToInt(x), y0 = Mathf.FloorToInt(y);
+        float tx = x - x0, ty = y - y0;
+        tx = tx * tx * (3f - 2f * tx);
+        ty = ty * ty * (3f - 2f * ty);
+        float a = Mathf.Lerp(Hash(x0, y0), Hash(x0 + 1, y0), tx);
+        float b = Mathf.Lerp(Hash(x0, y0 + 1), Hash(x0 + 1, y0 + 1), tx);
+        return Mathf.Lerp(a, b, ty);
     }
 
     private static float Hash(int x, int y)

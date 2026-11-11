@@ -75,6 +75,10 @@
   "button.confirm": "Confirm",
   "button.cancel": "Cancel",
   "button.selectAll": "Select all",
+  "button.stop": "Stop",
+  "button.hold": "Hold",
+  "button.attackMove": "Fight",
+  "hint.attackMove": "Tap the map: units fight on the way",
   "button.clear": "Clear",
 
   "outcome.victoryShort": "VICTORY",

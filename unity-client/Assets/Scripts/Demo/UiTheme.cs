@@ -18,7 +18,7 @@ public static class UiTheme
     public static readonly Color Warn = new Color(0.93f, 0.74f, 0.24f, 1f);
     public static readonly Color Alert = new Color(0.86f, 0.31f, 0.25f, 1f);
 
-    public enum Icon { Resources, Energy, Units, Clock, Alert, Build, Pause, Flag, Cross, Target, Globe, Star, Person }
+    public enum Icon { Resources, Energy, Units, Clock, Alert, Build, Pause, Flag, Cross, Target, Globe, Star, Person, Stop, Shield, Advance }
 
     private static Texture2D[] _icons;
     private static GUIStyle _chipText;
@@ -158,7 +158,7 @@ public static class UiTheme
 
     public static Texture2D IconTexture(Icon icon)
     {
-        if (_icons == null) _icons = new Texture2D[13];
+        if (_icons == null) _icons = new Texture2D[16];
         Texture2D cached = _icons[(int)icon];
         if (cached != null) return cached;
 
@@ -177,6 +177,9 @@ public static class UiTheme
             case Icon.Globe: shader = GlobeShader; break;
             case Icon.Star: shader = StarShader; break;
             case Icon.Person: shader = PersonShader; break;
+            case Icon.Stop: shader = StopShader; break;
+            case Icon.Shield: shader = ShieldShader; break;
+            case Icon.Advance: shader = AdvanceShader; break;
             default: shader = ClockShader; break;
         }
         _icons[(int)icon] = Render(shader);
@@ -312,6 +315,32 @@ public static class UiTheme
         Vector2 b = p - new Vector2(0.5f, 0.12f);
         bool body = b.y >= 0f && b.x * b.x / (0.38f * 0.38f) + b.y * b.y / (0.36f * 0.36f) <= 1f;
         return head || body ? Bone : Color.clear;
+    }
+
+    /// <summary>Solid square: stop.</summary>
+    private static Color StopShader(Vector2 p) =>
+        p.x > 0.2f && p.x < 0.8f && p.y > 0.2f && p.y < 0.8f ? Bone : Color.clear;
+
+    /// <summary>Heater shield: hold position.</summary>
+    private static Color ShieldShader(Vector2 p)
+    {
+        Vector2[] outer = { new Vector2(0.16f, 0.88f), new Vector2(0.84f, 0.88f), new Vector2(0.84f, 0.50f), new Vector2(0.5f, 0.08f), new Vector2(0.16f, 0.50f) };
+        if (!InPolygon(outer, p)) return Color.clear;
+        Vector2[] inner = { new Vector2(0.26f, 0.78f), new Vector2(0.74f, 0.78f), new Vector2(0.74f, 0.52f), new Vector2(0.5f, 0.22f), new Vector2(0.26f, 0.52f) };
+        return InPolygon(inner, p) ? new Color(0.30f, 0.34f, 0.24f, 1f) : Bone;
+    }
+
+    /// <summary>Two chevrons pointing up: advance and fight.</summary>
+    private static Color AdvanceShader(Vector2 p)
+    {
+        for (int i = 0; i < 2; i++)
+        {
+            float oy = 0.12f + i * 0.30f;
+            float d = Mathf.Abs(p.x - 0.5f);
+            float ridge = oy + 0.42f - d * 0.9f; // upper edge of the chevron
+            if (d < 0.38f && p.y < ridge && p.y > ridge - 0.14f) return Bone;
+        }
+        return Color.clear;
     }
 
     /// <summary>Two vertical bars.</summary>

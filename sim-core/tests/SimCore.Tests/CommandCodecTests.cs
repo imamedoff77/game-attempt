@@ -16,6 +16,9 @@ public class CommandCodecTests
         new SetRallyCommand(9, V(30, 31)),
         new AttackCommand(new[] { 5, 6 }, AttackKind.Building, 11),
         new AttackCommand(new[] { 5 }, AttackKind.Unit, 12),
+        new StopCommand(new[] { 4, 5 }),
+        new HoldCommand(new[] { 6 }),
+        new AttackMoveCommand(new[] { 7, 8 }, V(3, 4)),
     };
 
     /// <summary>Same type and same content (commands have no Equals, so compare by re-encoding).</summary>

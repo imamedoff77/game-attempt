@@ -106,6 +106,7 @@ public static class GameBuild
 
         PlayerSettings.insecureHttpOption = InsecureHttpOption.DevelopmentOnly; // development builds may talk to the account server on this computer over http
         EditorUserBuildSettings.buildAppBundle = false;
+        ApplyAppIcon();
         PlayerSettings.enableFrameTimingStats = true; // GPU/CPU frame times for the performance log (small cost)
         ConfigureSigning();
     }
@@ -116,6 +117,14 @@ public static class GameBuild
     /// Without that file the build falls back to Unity's debug key, so a fresh checkout still builds.
     /// An app installed with one key cannot be updated by an APK signed with another: uninstall first when switching.
     /// </summary>
+    // The launcher icon: art/store/icon-512.png copied to Assets/Textures/appicon.png (default icon for every size).
+    private static void ApplyAppIcon()
+    {
+        var icon = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/Textures/appicon.png");
+        if (icon == null) return;
+        PlayerSettings.SetIcons(NamedBuildTarget.Unknown, new[] { icon }, IconKind.Any);
+    }
+
     private static void ConfigureSigning()
     {
         string file = Environment.GetEnvironmentVariable("GAME_KEYS_FILE");

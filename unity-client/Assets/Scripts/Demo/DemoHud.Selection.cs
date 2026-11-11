@@ -18,6 +18,33 @@ public sealed partial class DemoHud
         _game.Mode != DemoGame.GameMode.Menu && _game.World != null && !_game.Placing && !_menuOpen
         && _game.SelectedBuilding == null && _game.SelectedCount > 0 && _game.Outcome == DemoGame.GameOutcome.Playing;
 
+    /// <summary>Stop, Hold and Attack-move for the selected units, left of the bottom-right buttons.</summary>
+    private Rect[] OrderRects()
+    {
+        Rect[] bottom = BottomRects();
+        float gap = Screen.height * 0.015f;
+        float h = bottom[0].height, w = h * 1.65f;
+        float x = (MinimapVisible ? MinimapRect().xMax : 0f) + gap;
+        var rects = new Rect[3];
+        for (int i = 0; i < 3; i++) rects[i] = new Rect(x + i * (w + gap), bottom[0].y, w, h);
+        return rects;
+    }
+
+    private bool OrderButtonsVisible =>
+        _game.Mode != DemoGame.GameMode.Menu && _game.World != null && !_game.Placing && !_menuOpen
+        && _game.SelectedBuilding == null && _game.SelectedCount > 0 && _game.Outcome == DemoGame.GameOutcome.Playing;
+
+    private void DrawOrderButtons()
+    {
+        Rect[] r = OrderRects();
+        if (IconButton(r[0], UiTheme.Icon.Stop, Strings.Get("button.stop"))) _game.OrderStop();
+        bool holding = _game.SelectionHolding;
+        if (IconButton(r[1], UiTheme.Icon.Shield, Strings.Get("button.hold"), holding)) { if (holding) _game.OrderStop(); else _game.OrderHold(); }
+        if (IconButton(r[2], UiTheme.Icon.Advance, Strings.Get("button.attackMove"), _game.AttackMovePending)) _game.AttackMovePending = !_game.AttackMovePending;
+        if (_game.AttackMovePending)
+            DrawHintAt(new Rect(r[0].x, r[0].y - r[0].height * 0.75f - Screen.height * 0.012f, r[2].xMax - r[0].x, r[0].height * 0.75f), Strings.Get("hint.attackMove"));
+    }
+
     /// <summary>How many cards the selected building shows in the bottom row.</summary>
     private static int BuildingCardCount(Building b) =>
         b.Kind == BuildingKind.Hq ? 1 + Defs.UpgradeCount : Defs.Produces(b.Kind).Length;

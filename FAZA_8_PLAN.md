@@ -14,7 +14,7 @@
 - [x] Hostinq sənədi: `server/HOSTING.md` (publish, PostgreSQL + gündəlik yedək, systemd, Caddy HTTPS, firewall). **[İSTİFADƏÇİ]** VPS və domen alır, Claude SSH ilə quraşdırır.
 - [x] Təhqiramiz displayName filtri (FAZA_5 5.5c-2); hesabat düyməsi yoxdur, dəstək e-poçtu ilə.
 - [ ] Zəif telefonda (A34-dən zəif) performans ölçməsi, FPS/RAM; lazım gələrsə grafika səviyyəsi.
-- [ ] Ekran görüntüləri və mağaza mətni (Claude yazır, görüntüləri telefondan çəkir): qısa təsvir (80 simvol), tam təsvir, 512×512 ikon, 1024×500 qrafik. İkon və qrafik üçün real art lazımdır (Faza 7).
+- [x] Mağaza mətni, 512×512 ikon və 1024×500 qrafik: `art/store/` (`LISTING.md`, `make_store_art.py`; ikon və qrafik öz paletimizlə kodla çəkilir, müvəqqəti ad "Iron Doctrine" ilə). Qalır: telefon ekran görüntüləri (real oyundan, buraxılışa yaxın çəkilir).
 - [ ] Real art/animasiya/səs (Faza 7): hazırda prosedur modellər və səslər. İstifadəçi "normal qrafikalar olanda" sınaqdan keçirəcək.
 
 ## [İSTİFADƏÇİ] addımları
