@@ -13,8 +13,10 @@ namespace SimCore
         public const int CurrentVersion = 1;
 
         public int StartResources { get; private set; }
-        public int HqEnergy { get; private set; }
-        public int HqIncomePerMinute { get; private set; }
+        /// <summary>Energy the base itself gives at base level 1, 2, 3...</summary>
+        public int[] HqEnergy { get; private set; }
+        /// <summary>Resources per minute the base itself gives at base level 1, 2, 3...</summary>
+        public int[] HqIncomePerMinute { get; private set; }
         public int[] PowerPlantOutput { get; private set; }
         public int[] SupplyCenterIncome { get; private set; }
         /// <summary>Unit places a base of level 1, 2, 3... provides.</summary>
@@ -55,8 +57,8 @@ namespace SimCore
 
             var economy = new Obj(root.Raw("economy"), "economy");
             StartResources = economy.Int("startResources", 0, 1000000);
-            HqEnergy = economy.Int("hqEnergy", 0, 100000);
-            HqIncomePerMinute = economy.Int("hqIncomePerMinute", 0, 1000000);
+            HqEnergy = economy.IntList("hqEnergy", 0, 100000);
+            HqIncomePerMinute = economy.IntList("hqIncomePerMinute", 0, 1000000);
             PowerPlantOutput = economy.IntList("powerPlantOutput", 0, 100000);
             SupplyCenterIncome = economy.IntList("supplyCenterIncome", 0, 1000000);
             PopCap = economy.IntList("popCap", 1, 10000);
@@ -64,6 +66,8 @@ namespace SimCore
             BaseUpgradeSeconds = economy.IntList("baseUpgradeSeconds", 1, 3600);
             CancelRefundPercent = economy.Int("cancelRefundPercent", 0, 100);
             economy.Finish();
+            if (HqEnergy.Length != PopCap.Length || HqIncomePerMinute.Length != PopCap.Length)
+                throw new GameDataException("economy: hqEnergy and hqIncomePerMinute need one entry per base level (same count as popCap)");
             if (BaseUpgradeCost.Length != PopCap.Length - 1 || BaseUpgradeSeconds.Length != PopCap.Length - 1)
                 throw new GameDataException("economy: baseUpgradeCost and baseUpgradeSeconds need one entry fewer than popCap (one per upgrade between levels)");
 
@@ -173,12 +177,15 @@ namespace SimCore
             int cooldown = o.IntOr("cooldownTicks", 0, 0, 1000);
             int repairPerSecond = o.IntOr("repairPerSecond", 0, 0, 100000);
             int repairRadius = o.IntOr("repairRadius", 0, 0, 1000);
+            int[] upgradeCost = o.IntListOr("upgradeCost", 0, 1000000);
+            int[] upgradeSeconds = o.IntListOr("upgradeSeconds", 1, 3600);
             o.Finish();
+            if (upgradeCost.Length != upgradeSeconds.Length) throw new GameDataException($"{path}: upgradeCost and upgradeSeconds need the same number of levels");
             if (damage > 0 && (range == 0 || cooldown == 0)) throw new GameDataException($"{path}: a shooting building needs range and cooldownTicks");
             if (repairPerSecond > 0 && repairRadius == 0) throw new GameDataException($"{path}: a repair building needs repairRadius");
 
             Buildings[(int)kind] = new BuildingDef(kind, width, height, cost, energyUse, constructionSeconds,
-                requiredLevel, damage, range, cooldown, repairPerSecond, repairRadius);
+                requiredLevel, damage, range, cooldown, repairPerSecond, repairRadius, upgradeCost, upgradeSeconds);
             BuildingHp[(int)kind] = hp;
         }
 
@@ -196,7 +203,7 @@ namespace SimCore
         {
             var h = StateHasher.Create();
             h.Add(CurrentVersion);
-            h.Add(StartResources); h.Add(HqEnergy); h.Add(HqIncomePerMinute);
+            h.Add(StartResources); AddTable(ref h, HqEnergy); AddTable(ref h, HqIncomePerMinute);
             AddTable(ref h, PowerPlantOutput);
             AddTable(ref h, SupplyCenterIncome);
             foreach (UpgradeDef u in Upgrades)
@@ -218,6 +225,7 @@ namespace SimCore
                 BuildingDef b = Buildings[i];
                 h.Add(i); h.Add(b.Width); h.Add(b.Height); h.Add(b.Cost); h.Add(b.EnergyUse); h.Add(BuildingHp[i]); h.Add(b.ConstructionSeconds);
                 h.Add(b.RequiredLevel); h.Add(b.Damage); h.Add(b.Range); h.Add(b.CooldownTicks); h.Add(b.RepairPerSecond); h.Add(b.RepairRadius);
+                AddTable(ref h, b.UpgradeCost); AddTable(ref h, b.UpgradeSeconds);
             }
             return h.Value;
         }
@@ -275,6 +283,9 @@ namespace SimCore
                 }
                 return result;
             }
+
+            /// <summary>Like <see cref="IntList"/>, but the field may be left out (then the list is empty).</summary>
+            public int[] IntListOr(string name, int min, int max) => _map.ContainsKey(name) ? IntList(name, min, max) : new int[0];
 
             public T Enum<T>(string name) where T : struct
             {

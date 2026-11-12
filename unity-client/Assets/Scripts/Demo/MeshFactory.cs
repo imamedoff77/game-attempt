@@ -77,6 +77,57 @@ public static class MeshFactory
         return mesh;
     }
 
+    /// <summary>Flat arrow at y = 0 pointing along +z, centred on x = 0: a stem of the given width and a head twice as wide.</summary>
+    public static Mesh Arrow(float width, float length)
+    {
+        float stemEnd = length * 0.5f, hw = width * 0.5f, hh = width;
+        var mesh = new Mesh { name = "Arrow" };
+        mesh.vertices = new[]
+        {
+            new Vector3(-hw, 0, 0), new Vector3(hw, 0, 0), new Vector3(hw, 0, stemEnd), new Vector3(-hw, 0, stemEnd),
+            new Vector3(-hh, 0, stemEnd), new Vector3(hh, 0, stemEnd), new Vector3(0, 0, length),
+        };
+        mesh.triangles = new[] { 0, 2, 1, 0, 3, 2, 4, 6, 5 };
+        mesh.RecalculateNormals();
+        mesh.RecalculateBounds();
+        return mesh;
+    }
+
+    /// <summary>Targeting reticle at y = 0: a ring with four triangular ticks pointing in from it.</summary>
+    public static Mesh Reticle(float radius, float thickness, int segments = 32)
+    {
+        float inner = radius - thickness;
+        var verts = new System.Collections.Generic.List<Vector3>();
+        var tris = new System.Collections.Generic.List<int>();
+        for (int i = 0; i < segments; i++)
+        {
+            float a0 = i * Mathf.PI * 2f / segments, a1 = (i + 1) * Mathf.PI * 2f / segments;
+            int b = verts.Count;
+            verts.Add(new Vector3(Mathf.Cos(a0) * radius, 0f, Mathf.Sin(a0) * radius));
+            verts.Add(new Vector3(Mathf.Cos(a0) * inner, 0f, Mathf.Sin(a0) * inner));
+            verts.Add(new Vector3(Mathf.Cos(a1) * radius, 0f, Mathf.Sin(a1) * radius));
+            verts.Add(new Vector3(Mathf.Cos(a1) * inner, 0f, Mathf.Sin(a1) * inner));
+            tris.AddRange(new[] { b, b + 3, b + 2, b, b + 1, b + 3 });
+        }
+        for (int k = 0; k < 4; k++)
+        {
+            float a = k * Mathf.PI * 0.5f;
+            Vector3 dir = new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a));
+            Vector3 side = new Vector3(-dir.z, 0f, dir.x);
+            int b = verts.Count;
+            verts.Add(dir * (radius * 0.42f));
+            verts.Add(dir * (radius * 0.86f) + side * (radius * 0.16f));
+            verts.Add(dir * (radius * 0.86f) - side * (radius * 0.16f));
+            tris.AddRange(new[] { b, b + 2, b + 1 });
+        }
+        var mesh = new Mesh { name = "Reticle" };
+        mesh.SetVertices(verts);
+        mesh.SetTriangles(tris, 0);
+        mesh.RecalculateNormals();
+        mesh.RecalculateBounds();
+        return mesh;
+    }
+
     /// <summary>Filled disc in the x/y plane (faces the camera when turned like it), visible from both sides: for smoke, flashes and fire.</summary>
     public static Mesh Disc(float radius, int segments = 12)
     {

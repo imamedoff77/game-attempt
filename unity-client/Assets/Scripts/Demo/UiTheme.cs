@@ -18,7 +18,7 @@ public static class UiTheme
     public static readonly Color Warn = new Color(0.93f, 0.74f, 0.24f, 1f);
     public static readonly Color Alert = new Color(0.86f, 0.31f, 0.25f, 1f);
 
-    public enum Icon { Resources, Energy, Units, Clock, Alert, Build, Pause, Flag, Cross, Target, Globe, Star, Person, Stop, Shield, Advance }
+    public enum Icon { Resources, Energy, Units, Clock, Alert, Build, Pause, Flag, Cross, Target, Globe, Star, Person, Stop, Shield, Advance, Box, Rotate, Upgrade, Train }
 
     private static Texture2D[] _icons;
     private static GUIStyle _chipText;
@@ -158,7 +158,7 @@ public static class UiTheme
 
     public static Texture2D IconTexture(Icon icon)
     {
-        if (_icons == null) _icons = new Texture2D[16];
+        if (_icons == null) _icons = new Texture2D[Enum.GetValues(typeof(Icon)).Length];
         Texture2D cached = _icons[(int)icon];
         if (cached != null) return cached;
 
@@ -180,6 +180,10 @@ public static class UiTheme
             case Icon.Stop: shader = StopShader; break;
             case Icon.Shield: shader = ShieldShader; break;
             case Icon.Advance: shader = AdvanceShader; break;
+            case Icon.Box: shader = BoxShader; break;
+            case Icon.Rotate: shader = RotateShader; break;
+            case Icon.Upgrade: shader = UpgradeShader; break;
+            case Icon.Train: shader = TrainShader; break;
             default: shader = ClockShader; break;
         }
         _icons[(int)icon] = Render(shader);
@@ -341,6 +345,53 @@ public static class UiTheme
             if (d < 0.38f && p.y < ridge && p.y > ridge - 0.14f) return Bone;
         }
         return Color.clear;
+    }
+
+    /// <summary>Dashed selection frame with a handle in each corner: box select.</summary>
+    private static Color BoxShader(Vector2 p)
+    {
+        const float lo = 0.12f, hi = 0.88f, t = 0.055f;
+        bool inside = p.x >= lo && p.x <= hi && p.y >= lo && p.y <= hi;
+        if (!inside) return Color.clear;
+        bool corner = (p.x < lo + 0.16f || p.x > hi - 0.16f) && (p.y < lo + 0.16f || p.y > hi - 0.16f);
+        bool band = p.x < lo + t || p.x > hi - t || p.y < lo + t || p.y > hi - t;
+        if (corner && band) return Bone;
+        bool dash = (Mathf.FloorToInt((p.x + p.y) * 11f) & 1) == 0;
+        if (band && dash) return Bone;
+        bool handle = (p.x < lo + 0.14f || p.x > hi - 0.14f) && (p.y < lo + 0.14f || p.y > hi - 0.14f);
+        return handle ? Accent : Color.clear;
+    }
+
+    /// <summary>Circular arrow: rotate.</summary>
+    private static Color RotateShader(Vector2 p)
+    {
+        Vector2 d = p - new Vector2(0.5f, 0.5f);
+        float r = d.magnitude;
+        float ang = Mathf.Atan2(d.y, d.x) * Mathf.Rad2Deg;
+        if (ang < 0f) ang += 360f;
+        if (r > 0.26f && r < 0.38f && ang >= 55f) return Bone;
+        Vector2[] head = { new Vector2(0.5f + 0.32f - 0.14f, 0.5f), new Vector2(0.5f + 0.32f + 0.14f, 0.5f), new Vector2(0.5f + 0.32f, 0.5f + 0.24f) };
+        return InPolygon(head, p) ? Accent : Color.clear;
+    }
+
+    /// <summary>Arrow pointing up over a base line: upgrade.</summary>
+    private static Color UpgradeShader(Vector2 p)
+    {
+        Vector2[] head = { new Vector2(0.5f, 0.92f), new Vector2(0.14f, 0.52f), new Vector2(0.86f, 0.52f) };
+        bool stem = p.x > 0.38f && p.x < 0.62f && p.y > 0.22f && p.y <= 0.53f;
+        bool bar = p.x > 0.18f && p.x < 0.82f && p.y > 0.08f && p.y < 0.16f;
+        return InPolygon(head, p) || stem ? Good : bar ? Bone : Color.clear;
+    }
+
+    /// <summary>A helmet with a plus: train units.</summary>
+    private static Color TrainShader(Vector2 p)
+    {
+        Vector2 q = (p - new Vector2(0.38f, 0.52f)) / 0.78f + new Vector2(0.5f, 0.42f);
+        Color helmet = HelmetShader(q);
+        if (helmet.a > 0f) return helmet;
+        bool plusH = Mathf.Abs(p.y - 0.24f) < 0.06f && Mathf.Abs(p.x - 0.78f) < 0.17f;
+        bool plusV = Mathf.Abs(p.x - 0.78f) < 0.06f && Mathf.Abs(p.y - 0.24f) < 0.17f;
+        return plusH || plusV ? Good : Color.clear;
     }
 
     /// <summary>Two vertical bars.</summary>

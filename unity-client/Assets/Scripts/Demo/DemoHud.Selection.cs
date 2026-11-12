@@ -15,7 +15,7 @@ public sealed partial class DemoHud
     private readonly List<SelectionGroup> _selectionGroups = new List<SelectionGroup>();
 
     private bool SelectionBarVisible =>
-        _game.Mode != DemoGame.GameMode.Menu && _game.World != null && !_game.Placing && !_menuOpen
+        _game.Mode != DemoGame.GameMode.Menu && _game.World != null && !_game.Placing && !_menuOpen && !_trainOpen
         && _game.SelectedBuilding == null && _game.SelectedCount > 0 && _game.Outcome == DemoGame.GameOutcome.Playing;
 
     /// <summary>Stop, Hold and Attack-move for the selected units, left of the bottom-right buttons.</summary>
@@ -31,7 +31,7 @@ public sealed partial class DemoHud
     }
 
     private bool OrderButtonsVisible =>
-        _game.Mode != DemoGame.GameMode.Menu && _game.World != null && !_game.Placing && !_menuOpen
+        _game.Mode != DemoGame.GameMode.Menu && _game.World != null && !_game.Placing && !_menuOpen && !_trainOpen
         && _game.SelectedBuilding == null && _game.SelectedCount > 0 && _game.Outcome == DemoGame.GameOutcome.Playing;
 
     private void DrawOrderButtons()

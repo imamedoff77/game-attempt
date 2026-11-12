@@ -49,6 +49,17 @@ namespace SimCore
 
         internal int Spawned;
 
+        /// <summary>Which side the door is on: 0 = low y (up on the map's y axis), 1 = high x, 2 = high y, 3 = low x. Units appear at the door.</summary>
+        public int Facing { get; internal set; }
+        /// <summary>Building level, 1 up to <c>Defs.Building(Kind).MaxLevel</c> (only factories can be raised). It sets which units the building may make.</summary>
+        public int Level { get; internal set; } = 1;
+        /// <summary>Ticks left until the building reaches its next level (0 = no upgrade under way).</summary>
+        public int UpgradeTicksLeft { get; internal set; }
+        public bool Upgrading => UpgradeTicksLeft > 0;
+
+        /// <summary>The default door side: the one facing the middle of the map (low y for team 0, high y for team 1).</summary>
+        public static int DefaultFacing(int team) => team == 0 ? 0 : 2;
+
         internal Building(int id, BuildingKind kind, int team, int x, int y, int width, int height, int output)
         {
             Id = id; Kind = kind; Team = team; MaxHp = Hp = Defs.BuildingHp(kind); X = x; Y = y; Width = width; Height = height; Output = output;

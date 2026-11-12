@@ -39,7 +39,7 @@ public sealed partial class DemoGame : MonoBehaviour
     private readonly List<ShotEvent> _shotBuffer = new List<ShotEvent>();
     private readonly List<int> _removeBuffer = new List<int>();
     private Material _enemyPalette;
-    private Material _arcMaterial;
+    private Material _arcMaterial, _teamDiscMine, _teamDiscEnemy;
     private readonly System.Diagnostics.Stopwatch _stepTimer = new System.Diagnostics.Stopwatch();
     private double _stepMsSum, _stepMsWindowMax;
     private int _stepCount;
@@ -79,6 +79,22 @@ public sealed partial class DemoGame : MonoBehaviour
     public bool SettingRally { get; private set; }
     /// <summary>The next tap on the ground sends the selected units to fight their way there (attack-move).</summary>
     public bool AttackMovePending { get; set; }
+
+    /// <summary>Door side (0..3, see <see cref="Building.Facing"/>) of the building being placed.</summary>
+    public int PlacingFacing { get; private set; }
+
+    /// <summary>Set by the HUD: offered every tap on the map first; returns true when it used the tap (e.g. it closed a menu).</summary>
+    public System.Func<bool> TapInterceptor;
+    private const float DoubleTapSeconds = 0.35f;
+    private const float AreaSelectOnUnit = 8f, AreaSelectOnGround = 6.5f;
+    private float _lastTapTime = -10f;
+    private Vector2 _lastTapPos;
+    private int _lastAttackId = -1;
+    private AttackKind _lastAttackKind;
+    private float _lastAttackTime = -10f;
+    private AttackMarker.Indicators _attackIndicators;
+    private GameObject _doorArrow;
+    private Material _doorMaterial;
 
     public bool Placing => _ghost != null;
     public BuildingKind PlacingKind => _placingKind;
@@ -161,6 +177,8 @@ public sealed partial class DemoGame : MonoBehaviour
 
         _enemyPalette = MakeEnemyPalette();
         _arcMaterial = new Material(overlayMaterial) { color = new Color(0.4f, 0.85f, 1f, 0.22f) };
+        _teamDiscMine = new Material(overlayMaterial) { color = new Color(0.25f, 0.6f, 1f, 0.38f) };
+        _teamDiscEnemy = new Material(overlayMaterial) { color = new Color(1f, 0.25f, 0.2f, 0.38f) };
         Fx.Init(markerMaterial);
         Sfx.Init(transform);
 
@@ -452,7 +470,7 @@ public sealed partial class DemoGame : MonoBehaviour
                 if (!_views.ContainsKey(unit.Id))
                 {
                     _views[unit.Id] = UnitView.Create(unit, UnitModel(unit.Kind),
-                        unit.Team != LocalTeam ? _enemyPalette : paletteMaterial, ringMaterial, _arcMaterial,
+                        unit.Team != LocalTeam ? _enemyPalette : paletteMaterial, ringMaterial, _arcMaterial, unit.Team != LocalTeam ? _teamDiscEnemy : _teamDiscMine,
                         IsBorrowed(unit.Kind) ? BorrowedScale(unit.Kind) : Vector3.one * 1.25f);
                     if (_countStats && unit.Team == LocalTeam) { UnitsBuilt++; Sfx.Play("ready", 0.5f, 0.03f, 0.3f); }
                 }
@@ -535,10 +553,23 @@ public sealed partial class DemoGame : MonoBehaviour
         if (IsBorrowed(b.Kind)) go.transform.localScale = BorrowedScale(b.Kind);
         // The model is centred on its footprint.
         go.transform.position = new Vector3(b.X + b.Width / 2f, 0f, b.Y + b.Height / 2f);
+        go.transform.rotation = Quaternion.Euler(0f, FacingAngle(b.Facing), 0f); // models have their door on the -z side
         Material mat = b.Team != LocalTeam ? _enemyPalette : paletteMaterial;
         foreach (Renderer r in go.GetComponentsInChildren<Renderer>()) r.sharedMaterial = mat;
         BuildingFx.Attach(go, b);
         return go;
+    }
+
+    /// <summary>Turn (degrees around y) that moves a model's door from its natural -z side to the given side.</summary>
+    public static float FacingAngle(int facing)
+    {
+        switch (facing)
+        {
+            case 1: return 270f;
+            case 2: return 180f;
+            case 3: return 90f;
+            default: return 0f;
+        }
     }
 
     /// <summary>The shared palette with its blues turned red, so the enemy is easy to tell apart.</summary>
@@ -723,6 +754,12 @@ public sealed partial class DemoGame : MonoBehaviour
         SaveProgress();
     }
 
+    /// <summary>Development only: puts resources into the player's stock (a match against the computer only; online it would desync).</summary>
+    public void DebugGiveResources(int amount)
+    {
+        if (World != null && Mode == GameMode.Skirmish) World.GiveResources(LocalTeam, amount);
+    }
+
     public void DebugWinMission()
     {
         if (Mode != GameMode.Campaign || Outcome != GameOutcome.Playing) return;
@@ -743,9 +780,21 @@ public sealed partial class DemoGame : MonoBehaviour
 
     public void Tap(Vector2 screen)
     {
+        if (TapInterceptor != null && TapInterceptor()) { _lastTapTime = -10f; return; }
+
+        // A second tap close to the first, soon after, is a double tap. A third one starts a new pair.
+        bool dbl = Time.unscaledTime - _lastTapTime < DoubleTapSeconds && (screen - _lastTapPos).magnitude < Screen.height * 0.09f;
+        _lastTapTime = dbl ? -10f : Time.unscaledTime;
+        _lastTapPos = screen;
+
         if (Placing)
         {
-            if (Cam.GroundPoint(screen, out Vector3 spot)) MovePlacement(spot);
+            if (Cam.GroundPoint(screen, out Vector3 spot))
+            {
+                // Tapping the building you are placing a second time puts it there.
+                if (dbl && PlacementHit(screen, spot)) { ConfirmPlacement(); return; }
+                MovePlacement(spot);
+            }
             return;
         }
 
@@ -775,17 +824,36 @@ public sealed partial class DemoGame : MonoBehaviour
 
         int unitId = PickUnit(screen, LocalTeam);
 
-        // Tapping an enemy with units selected = attack order.
+        // Double tap on one of your units: select every unit of yours around it.
+        if (dbl && unitId != -1 && World.GetUnit(unitId) is Unit tapped)
+        {
+            SelectNear(UnitView.ToUnity(tapped.Pos), AreaSelectOnUnit);
+            return;
+        }
+
+        // Tapping an enemy with units selected = attack order (a double tap on the same target is not ordered twice).
         if (unitId == -1 && _selected.Count > 0)
         {
             int enemyId = PickUnit(screen, OpponentTeam);
-            if (enemyId != -1) { OrderAttack(AttackKind.Unit, enemyId, World.GetUnit(enemyId).Pos); return; }
+            if (enemyId != -1)
+            {
+                if (!RepeatedAttack(AttackKind.Unit, enemyId)) OrderAttack(AttackKind.Unit, enemyId, World.GetUnit(enemyId).Pos);
+                return;
+            }
 
             if (PickBuilding(screen) is Building target && target.Team == OpponentTeam)
             {
-                OrderAttack(AttackKind.Building, target.Id, new Vec2(Fix64.FromInt(target.X + target.Width / 2), Fix64.FromInt(target.Y + target.Height / 2)));
+                if (!RepeatedAttack(AttackKind.Building, target.Id))
+                    OrderAttack(AttackKind.Building, target.Id, new Vec2(Fix64.FromInt(target.X + target.Width / 2), Fix64.FromInt(target.Y + target.Height / 2)));
                 return;
             }
+        }
+
+        // Double tap on empty ground: select the units of yours close to that spot (the first tap may already have sent the group there).
+        if (dbl && unitId == -1 && PickUnit(screen, OpponentTeam) == -1 && PickBuilding(screen) == null && Cam.GroundPoint(screen, out Vector3 around))
+        {
+            SelectNear(around, AreaSelectOnGround);
+            return;
         }
 
         if (unitId == -1)
@@ -823,6 +891,28 @@ public sealed partial class DemoGame : MonoBehaviour
 
         if (_selected.Count > 0 && Cam.GroundPoint(screen, out Vector3 ground))
             OrderMove(ground);
+    }
+
+    /// <summary>True when the same target was just ordered (the second tap of a double tap).</summary>
+    private bool RepeatedAttack(AttackKind kind, int id) =>
+        kind == _lastAttackKind && id == _lastAttackId && Time.unscaledTime - _lastAttackTime < 1.5f;
+
+    /// <summary>Selects all of the local player's units within <paramref name="radius"/> map units of a point. Does nothing when there are none.</summary>
+    public void SelectNear(Vector3 center, float radius)
+    {
+        var found = new List<int>();
+        float sqr = radius * radius;
+        foreach (UnitView view in _views.Values)
+        {
+            if (view.Team != LocalTeam) continue;
+            Vector3 d = view.transform.position - center;
+            d.y = 0f;
+            if (d.sqrMagnitude <= sqr) found.Add(view.UnitId);
+        }
+        if (found.Count == 0) return;
+        _selectedBuilding = null;
+        _selected.Clear();
+        foreach (int id in found) _selected.Add(id);
     }
 
     public void OrderStop()
@@ -878,6 +968,8 @@ public sealed partial class DemoGame : MonoBehaviour
             if (view.Team == LocalTeam) _selected.Add(view.UnitId);
     }
 
+    public void DeselectBuilding() { _selectedBuilding = null; SettingRally = false; }
+
     public void ClearSelection()
     {
         _selected.Clear();
@@ -916,6 +1008,15 @@ public sealed partial class DemoGame : MonoBehaviour
     public void QueueUnit(UnitKind kind)
     {
         if (_selectedBuilding != null) Issue(new QueueUnitCommand(_selectedBuilding.Id, kind));
+    }
+
+    /// <summary>Orders a unit without choosing the building: the least busy one that can make it takes the order.</summary>
+    public void QueueAnywhere(UnitKind kind) => Issue(new QueueUnitCommand(QueueUnitCommand.AnyBuilding, kind));
+
+    /// <summary>Raises the selected factory to its next level.</summary>
+    public void UpgradeSelectedBuilding()
+    {
+        if (_selectedBuilding != null) Issue(new UpgradeBuildingCommand(_selectedBuilding.Id));
     }
 
     /// <summary>Removes the last unit in the selected building's queue (it is refunded).</summary>
@@ -965,10 +1066,14 @@ public sealed partial class DemoGame : MonoBehaviour
         if (_highlightMaterial == null)
             _highlightMaterial = new Material(overlayMaterial) { color = new Color(1f, 0.9f, 0.2f, 0.45f) };
 
+        if (_attackIndicators == null && overlayMaterial != null) _attackIndicators = new AttackMarker.Indicators(overlayMaterial);
+        if (_attackIndicators != null) _attackIndicators.Update(World, _selected);
+
         if (_selectedBuilding == null || Placing)
         {
             if (_buildingHighlight != null) _buildingHighlight.SetActive(false);
             if (_rallyMarker != null) _rallyMarker.SetActive(false);
+            if (_doorArrow != null) _doorArrow.SetActive(false);
             return;
         }
 
@@ -981,8 +1086,22 @@ public sealed partial class DemoGame : MonoBehaviour
 
         if (_rallyMarker == null)
             _rallyMarker = MeshFactory.Spawn("RallyMarker", MeshFactory.Ring(0.35f, 0.55f), markerMaterial);
-        _rallyMarker.SetActive(b.HasRally);
-        if (b.HasRally) _rallyMarker.transform.position = new Vector3(b.Rally.X.ToFloat(), 0.07f, b.Rally.Y.ToFloat());
+        // The base shows the gathering point it sent to all its production buildings.
+        PlayerState owner = World.Player(b.Team);
+        bool hasRally = b.Kind == BuildingKind.Hq ? owner.HasRally : b.HasRally;
+        Vec2 rally = b.Kind == BuildingKind.Hq ? owner.Rally : b.Rally;
+        _rallyMarker.SetActive(hasRally);
+        if (hasRally) _rallyMarker.transform.position = new Vector3(rally.X.ToFloat(), 0.07f, rally.Y.ToFloat());
+
+        // The door of a production building: where its units come out.
+        bool door = !b.UnderConstruction && Defs.Produces(b.Kind).Length > 0;
+        if (_doorArrow == null)
+        {
+            _doorMaterial = new Material(overlayMaterial) { color = new Color(1f, 0.62f, 0.12f, 0.9f) };
+            _doorArrow = MeshFactory.Spawn("DoorArrow", MeshFactory.Arrow(0.45f, 1.1f), _doorMaterial);
+        }
+        _doorArrow.SetActive(door);
+        if (door) PlaceDoorArrow(_doorArrow, b.X, b.Y, b.Width, b.Height, b.Facing);
     }
 
     // ---- building ----
@@ -991,9 +1110,10 @@ public sealed partial class DemoGame : MonoBehaviour
     {
         CancelPlacement();
         _placingKind = kind;
+        PlacingFacing = Building.DefaultFacing(LocalTeam);
         _overlayWasVisible = _terrain.OverlayVisible;
         _terrain.SetOverlayVisible(true);
-        _ghost = new BuildGhost(kind, BuildingModel(kind), paletteMaterial, overlayMaterial);
+        _ghost = new BuildGhost(kind, BuildingModel(kind), PlacingFacing, paletteMaterial, overlayMaterial);
 
         // Start in the middle of the screen.
         if (!Cam.GroundPoint(new Vector2(Screen.width / 2f, Screen.height / 2f), out Vector3 centre))
@@ -1004,12 +1124,50 @@ public sealed partial class DemoGame : MonoBehaviour
     public void ConfirmPlacement()
     {
         if (!Placing || PlacingCheck != BuildCheck.Ok) return;
-        Issue(new BuildCommand(_placingKind, PlacingCell.x, PlacingCell.y));
+        Issue(new BuildCommand(_placingKind, PlacingCell.x, PlacingCell.y, PlacingFacing));
         Sfx.Play("place", 0.8f, 0f);
         EndPlacement();
     }
 
     public void CancelPlacement() => EndPlacement();
+
+    /// <summary>Turns the building being placed a quarter turn: its door moves to the next side (and a 3 x 2 building becomes 2 x 3).</summary>
+    public void RotatePlacement()
+    {
+        if (!Placing) return;
+        Defs.Footprint(_placingKind, PlacingFacing, out int w, out int h);
+        var centre = new Vector3(PlacingCell.x + w / 2f, 0f, PlacingCell.y + h / 2f); // keep the middle of the building where it is
+        PlacingFacing = (PlacingFacing + 1) & 3;
+        _ghost.Destroy();
+        _ghost = new BuildGhost(_placingKind, BuildingModel(_placingKind), PlacingFacing, paletteMaterial, overlayMaterial);
+        MovePlacement(centre);
+    }
+
+    /// <summary>True when a tap lands on the building being placed (on its ground area or on its 3D volume).</summary>
+    private bool PlacementHit(Vector2 screen, Vector3 ground)
+    {
+        Defs.Footprint(_placingKind, PlacingFacing, out int w, out int h);
+        if (ground.x >= PlacingCell.x - 1f && ground.x <= PlacingCell.x + w + 1f && ground.z >= PlacingCell.y - 1f && ground.z <= PlacingCell.y + h + 1f) return true;
+        var bounds = new Bounds(new Vector3(PlacingCell.x + w / 2f, 1.6f, PlacingCell.y + h / 2f), new Vector3(w, 3.2f, h));
+        return bounds.IntersectRay(Cam.Camera.ScreenPointToRay(screen));
+    }
+
+    /// <summary>An arrow just outside the given side of a footprint, pointing out of the door.</summary>
+    public static void PlaceDoorArrow(GameObject arrow, int x, int y, int width, int height, int facing)
+    {
+        // Side 0 = low y (towards the camera), 1 = high x, 2 = high y, 3 = low x; the arrow mesh points along +z.
+        Vector3 at;
+        float yaw;
+        switch (facing)
+        {
+            case 1: at = new Vector3(x + width + 0.1f, 0.1f, y + height / 2f); yaw = 90f; break;
+            case 2: at = new Vector3(x + width / 2f, 0.1f, y + height + 0.1f); yaw = 0f; break;
+            case 3: at = new Vector3(x - 0.1f, 0.1f, y + height / 2f); yaw = 270f; break;
+            default: at = new Vector3(x + width / 2f, 0.1f, y - 0.1f); yaw = 180f; break;
+        }
+        arrow.transform.position = at;
+        arrow.transform.rotation = Quaternion.Euler(0f, yaw, 0f);
+    }
 
     private void EndPlacement()
     {
@@ -1022,16 +1180,16 @@ public sealed partial class DemoGame : MonoBehaviour
     /// <summary>Puts the building's centre on the tapped point, snapped to whole cells and kept inside the map.</summary>
     private void MovePlacement(Vector3 ground)
     {
-        BuildingDef def = Defs.Building(_placingKind);
-        int x = Mathf.Clamp(Mathf.RoundToInt(ground.x - def.Width / 2f), 0, MapSize - def.Width);
-        int y = Mathf.Clamp(Mathf.RoundToInt(ground.z - def.Height / 2f), 0, MapSize - def.Height);
+        Defs.Footprint(_placingKind, PlacingFacing, out int width, out int height);
+        int x = Mathf.Clamp(Mathf.RoundToInt(ground.x - width / 2f), 0, MapSize - width);
+        int y = Mathf.Clamp(Mathf.RoundToInt(ground.z - height / 2f), 0, MapSize - height);
         PlacingCell = new Vector2Int(x, y);
     }
 
     private void UpdateGhost()
     {
         if (!Placing) return;
-        PlacingCheck = World.CheckBuild(_placingKind, PlacingCell.x, PlacingCell.y, LocalTeam);
+        PlacingCheck = World.CheckBuild(_placingKind, PlacingCell.x, PlacingCell.y, LocalTeam, PlacingFacing);
         _ghost.SetCell(PlacingCell.x, PlacingCell.y, PlacingCheck == BuildCheck.Ok);
     }
 
@@ -1054,7 +1212,12 @@ public sealed partial class DemoGame : MonoBehaviour
         var ids = new int[_selected.Count];
         _selected.CopyTo(ids);
         Issue(new AttackCommand(ids, kind, targetId));
-        TapMarker.Spawn(UnitView.ToUnity(targetPos), markerMaterial);
+        _lastAttackKind = kind;
+        _lastAttackId = targetId;
+        _lastAttackTime = Time.unscaledTime;
+        float size = kind == AttackKind.Building && World.GetBuilding(targetId) is Building b ? Mathf.Max(b.Width, b.Height) * 0.75f + 0.6f
+                   : World.GetUnit(targetId) is Unit t && Defs.Unit(t.Kind).Class == UnitClass.Vehicle ? 1.5f : 1.0f;
+        AttackMarker.Flash(UnitView.ToUnity(targetPos), size, overlayMaterial);
     }
 
     private static Vec2 ToVec2(Vector3 ground) => new Vec2(

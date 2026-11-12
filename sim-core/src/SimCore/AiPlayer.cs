@@ -46,6 +46,7 @@ namespace SimCore
             PlanBuildings(ctx, commands);
             PlanProduction(ctx, commands);
             PlanBaseUpgrade(ctx, commands);
+            PlanFactoryUpgrades(ctx, commands);
             PlanResearch(ctx, commands);
             PlanArmy(ctx, commands);
         }
@@ -296,7 +297,7 @@ namespace SimCore
         /// </summary>
         private bool InfantryFull(Context c)
         {
-            int share = Target(100, 70, 100);
+            int share = Target(100, 70, 40);
             if (share >= 100 || c.Count[(int)BuildingKind.VehicleFactory] == 0) return false;
             int infantry = 0;
             foreach (Unit u in c.Army) if (Defs.Unit(u.Kind).Class == UnitClass.Infantry) infantry += Defs.Unit(u.Kind).Pop;
@@ -360,15 +361,59 @@ namespace SimCore
 
         private void PlanBaseUpgrade(Context c, List<Command> output)
         {
-            if (c.W.CheckUpgradeBase(Team) != UpgradeCheck.Ok) return;
+            UpgradeCheck check = c.W.CheckUpgradeBase(Team);
+            if (check != UpgradeCheck.Ok && check != UpgradeCheck.NotEnoughResources) return;
             int cost = Economy.BaseUpgradeCost(c.Me.BaseLevel);
             int reserve = Target(150, 80, 40);
-            if (c.Budget < cost + reserve) return;
             if (c.Count[(int)BuildingKind.Barracks] == 0 || c.Count[(int)BuildingKind.VehicleFactory] == 0) return;
             int popPercent = Target(90, 70, 50);
-            if (c.Me.PopUsed * 100 < c.Me.PopCap * popPercent) return;
+            // A hard opponent goes for the tech early (a handful of defenders is enough) and saves up for it.
+            if (Difficulty == AiDifficulty.Hard ? c.PopFree > HardTechPopFree || c.Me.BaseLevel >= TechLevel : c.Me.PopUsed * 100 < c.Me.PopCap * popPercent) return;
+            if (c.Budget < cost + reserve)
+            {
+                if (Difficulty == AiDifficulty.Hard) c.Budget -= cost + reserve;
+                return;
+            }
             output.Add(new UpgradeBaseCommand());
             c.Budget -= cost;
+        }
+
+        /// <summary>Raises a factory that is behind the base: the higher units need the factory itself at that level.</summary>
+        private void PlanFactoryUpgrades(Context c, List<Command> output)
+        {
+            int reserve = Target(150, 80, 40);
+            foreach (Building b in c.Mine)
+            {
+                if (b.UnderConstruction || b.Level >= c.Me.BaseLevel || (Difficulty == AiDifficulty.Hard && b.Level >= TechLevel)) continue;
+                UpgradeCheck check = c.W.CheckUpgradeBuilding(b);
+                if (check != UpgradeCheck.Ok && !(check == UpgradeCheck.NotEnoughResources && Difficulty == AiDifficulty.Hard)) continue;
+                int cost = Defs.Building(b.Kind).UpgradeCost[b.Level - 1];
+                if (c.Budget < cost + reserve)
+                {
+                    if (Difficulty == AiDifficulty.Hard) c.Budget -= cost + reserve; // saves for it
+                    continue;
+                }
+                output.Add(new UpgradeBuildingCommand(b.Id));
+                c.Budget -= cost;
+            }
+        }
+
+        /// <summary>The level a hard opponent raises the base and its factories to before it attacks.</summary>
+        private const int TechLevel = 2;
+        private const int HardTechPopFree = 3; // the base is full: money has nothing else to buy, so it goes to the tech
+
+        /// <summary>Base and at least one factory of each kind at <see cref="TechLevel"/>.</summary>
+        private static bool Teched(Context c)
+        {
+            if (c.Me.BaseLevel < TechLevel) return false;
+            bool barracks = false, factory = false;
+            foreach (Building b in c.Mine)
+            {
+                if (b.UnderConstruction || b.Level < TechLevel) continue;
+                if (b.Kind == BuildingKind.Barracks) barracks = true;
+                else if (b.Kind == BuildingKind.VehicleFactory) factory = true;
+            }
+            return barracks && factory;
         }
 
         private void PlanResearch(Context c, List<Command> output)
@@ -430,6 +475,7 @@ namespace SimCore
 
             // Nobody rushes in the first minutes: the economy and the first buildings come first.
             bool tooEarly = c.W.Tick < Target(4, 3, 2) * 60 * World.TicksPerSecond + 30 * World.TicksPerSecond;
+            if (Difficulty == AiDifficulty.Hard && _wave == 0 && !Teched(c)) tooEarly = true; // the first wave goes with the better units
             if (!_attacking && !tooEarly && armyPop >= threshold) { _attacking = true; _wave++; }
             if (_attacking && armyPop * 3 <= threshold) _attacking = false; // most of the wave is gone: regroup
 

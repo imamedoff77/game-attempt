@@ -60,7 +60,7 @@ public class CommandCodecTests
     public void TheLayoutIsFixed_LittleEndian()
     {
         // type 2 = build, kind 3 = Barracks, x = 1, y = 258 (0x0102)
-        byte[] expected = { 2, 3, 1, 0, 0, 0, 2, 1, 0, 0 };
+        byte[] expected = { 2, 3, 1, 0, 0, 0, 2, 1, 0, 0, 255 }; // last byte: door side (255 = default)
         Assert.Equal(expected, CommandCodec.Encode(new BuildCommand(BuildingKind.Barracks, 1, 258)));
         // type 3 = queue, building 1, unit kind 3 = Tank
         Assert.Equal(new byte[] { 3, 1, 0, 0, 0, 3 }, CommandCodec.Encode(new QueueUnitCommand(1, UnitKind.Tank)));

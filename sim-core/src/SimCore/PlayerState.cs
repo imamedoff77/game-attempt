@@ -33,6 +33,9 @@ namespace SimCore
         /// <summary>The team gave up (<see cref="SurrenderCommand"/>): the match is lost for it.</summary>
         public bool Surrendered { get; internal set; }
         public int PopCap => Economy.PopCap(BaseLevel);
+        /// <summary>Gathering point set from the base: every production building of the team, present and future, sends new units here.</summary>
+        public bool HasRally { get; internal set; }
+        public Vec2 Rally { get; internal set; }
         /// <summary>Resource-ticks collected towards the next whole resource.</summary>
         internal int IncomeProgress;
     }

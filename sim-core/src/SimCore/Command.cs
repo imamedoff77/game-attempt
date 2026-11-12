@@ -32,16 +32,22 @@ namespace SimCore
         public BuildingKind Kind { get; }
         public int X { get; }
         public int Y { get; }
+        /// <summary>Door side 0..3 (see <see cref="Building.Facing"/>); -1 = the default side for the team.</summary>
+        public int Facing { get; }
 
-        public BuildCommand(BuildingKind kind, int x, int y)
+        public BuildCommand(BuildingKind kind, int x, int y, int facing = -1)
         {
-            Kind = kind; X = x; Y = y;
+            Kind = kind; X = x; Y = y; Facing = facing;
         }
     }
 
-    /// <summary>Order to add a unit to a building's production queue. Ignored if not allowed or too expensive.</summary>
+    /// <summary>
+    /// Order to add a unit to a building's production queue. Ignored if not allowed or too expensive.
+    /// <see cref="BuildingId"/> 0 means "any": the team's least busy building that can make the unit takes it (load balancing).
+    /// </summary>
     public sealed class QueueUnitCommand : Command
     {
+        public const int AnyBuilding = 0;
         public int BuildingId { get; }
         public UnitKind Kind { get; }
 
@@ -63,7 +69,21 @@ namespace SimCore
         }
     }
 
-    /// <summary>Order to set the point new units from a building walk to.</summary>
+    /// <summary>Order to raise a factory to its next level (costs resources and time). The base must already be at that level.</summary>
+    public sealed class UpgradeBuildingCommand : Command
+    {
+        public int BuildingId { get; }
+
+        public UpgradeBuildingCommand(int buildingId)
+        {
+            BuildingId = buildingId;
+        }
+    }
+
+    /// <summary>
+    /// Order to set the point new units from a building walk to. For the base (HQ) it sets the point for every production building
+    /// of the team, present and future; a single building can be changed again afterwards.
+    /// </summary>
     public sealed class SetRallyCommand : Command
     {
         public int BuildingId { get; }

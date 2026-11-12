@@ -99,13 +99,17 @@ public sealed partial class DemoHud
             _infoSmall = new GUIStyle(GUI.skin.label) { fontSize = smallSize, fontStyle = FontStyle.Bold, wordWrap = false, clipping = TextClipping.Clip };
         }
         _infoTitle.normal.textColor = UiTheme.Bone;
-        GUI.Label(new Rect(x, r.y + pad, w * 0.62f, r.height * 0.26f), Strings.BuildingName(b.Kind), _infoTitle);
+        string title = Strings.BuildingName(b.Kind);
+        if (Defs.Building(b.Kind).MaxLevel > 1) title += "  " + Strings.Get("panel.level", b.Level);
+        GUI.Label(new Rect(x, r.y + pad, w * 0.62f, r.height * 0.26f), title, _infoTitle);
 
         // Status on the right of the title line.
         string status;
         Color statusColor;
         if (b.UnderConstruction) { status = Strings.Get("panel.constructing", ConstructionPercent(b)); statusColor = UiTheme.Accent; }
         else if (!b.Powered) { status = Strings.Get("panel.noEnergy"); statusColor = UiTheme.Alert; }
+        else if (b.Upgrading) { status = Strings.Get("panel.upgrading", world.UpgradeProgressMilli(b) / 10); statusColor = UiTheme.Accent; }
+        else if (b.Kind == BuildingKind.Hq && me.Upgrading) { status = Strings.Get("panel.upgrading", UpgradePercent(me)); statusColor = UiTheme.Accent; }
         else { status = Strings.Get("panel.working"); statusColor = UiTheme.Good; }
         _infoSmall.alignment = TextAnchor.MiddleRight;
         _infoSmall.normal.textColor = statusColor;

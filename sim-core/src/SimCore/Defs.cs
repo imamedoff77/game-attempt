@@ -47,9 +47,10 @@ namespace SimCore
         }
     }
 
-    public enum QueueCheck { Ok, NotAllowed, QueueFull, NotEnoughResources, PopCapReached, LevelTooLow }
+    /// <summary>LevelTooLow = the base is too low a level; BuildingLevelTooLow = the producing building itself needs an upgrade; NoBuilding = there is no finished building that makes this unit.</summary>
+    public enum QueueCheck { Ok, NotAllowed, QueueFull, NotEnoughResources, PopCapReached, LevelTooLow, BuildingLevelTooLow, NoBuilding }
 
-    public enum UpgradeCheck { Ok, NotAllowed, MaxLevel, AlreadyUpgrading, NotEnoughResources }
+    public enum UpgradeCheck { Ok, NotAllowed, MaxLevel, AlreadyUpgrading, NotEnoughResources, BaseLevelTooLow }
 
     public enum BuildCheck { Ok, NotAllowed, BadGround, UnitInWay, NotEnoughResources, LevelTooLow }
 
@@ -118,13 +119,18 @@ namespace SimCore
         /// <summary>Repair buildings heal friendly units within <see cref="RepairRadius"/> by this much each second (0 = does not repair).</summary>
         public int RepairPerSecond { get; }
         public Fix64 RepairRadius { get; }
+        /// <summary>Price and time to raise the building from level 1 to 2, from 2 to 3... (empty = cannot be upgraded). Max level = entries + 1.</summary>
+        public int[] UpgradeCost { get; }
+        public int[] UpgradeSeconds { get; }
+        public int MaxLevel => UpgradeCost.Length + 1;
 
         public BuildingDef(BuildingKind kind, int width, int height, int cost, int energyUse, int constructionSeconds,
-            int requiredLevel, int damage, int range, int cooldownTicks, int repairPerSecond, int repairRadius)
+            int requiredLevel, int damage, int range, int cooldownTicks, int repairPerSecond, int repairRadius, int[] upgradeCost, int[] upgradeSeconds)
         {
             Kind = kind; Width = width; Height = height; Cost = cost; EnergyUse = energyUse; ConstructionSeconds = constructionSeconds;
             RequiredLevel = requiredLevel; Damage = damage; Range = Fix64.FromInt(range); CooldownTicks = cooldownTicks;
             RepairPerSecond = repairPerSecond; RepairRadius = Fix64.FromInt(repairRadius);
+            UpgradeCost = upgradeCost; UpgradeSeconds = upgradeSeconds;
         }
     }
 
@@ -168,14 +174,27 @@ namespace SimCore
         public static UnitKind[] Produces(BuildingKind kind) => Data.Produces[(int)kind];
 
         public static BuildingDef Building(BuildingKind kind) => Data.Buildings[(int)kind];
+
+        /// <summary>Footprint in cells of a building turned to a door side: sides 1 and 3 (east / west) swap width and height.</summary>
+        public static void Footprint(BuildingKind kind, int facing, out int width, out int height)
+        {
+            BuildingDef def = Data.Buildings[(int)kind];
+            bool turned = (facing & 1) == 1;
+            width = turned ? def.Height : def.Width;
+            height = turned ? def.Width : def.Height;
+        }
     }
 
     /// <summary>Economy numbers, served from the loaded <see cref="GameData"/>.</summary>
     public static class Economy
     {
         public static int StartResources => Defs.Data.StartResources;
-        public static int HqEnergy => Defs.Data.HqEnergy;
-        public static int HqIncomePerMinute => Defs.Data.HqIncomePerMinute;
+        /// <summary>Energy / income of a level-1 base.</summary>
+        public static int HqEnergy => Defs.Data.HqEnergy[0];
+        public static int HqIncomePerMinute => Defs.Data.HqIncomePerMinute[0];
+        /// <summary>Energy and resources per minute the base itself gives at the given base level (1-based): it grows with every level.</summary>
+        public static int HqEnergyAt(int baseLevel) => Defs.Data.HqEnergy[baseLevel - 1];
+        public static int HqIncomeAt(int baseLevel) => Defs.Data.HqIncomePerMinute[baseLevel - 1];
 
         /// <summary>Energy given by the 1st, 2nd, 3rd... power plant. Later ones repeat the last value.</summary>
         public static int[] PowerPlantOutput => Defs.Data.PowerPlantOutput;

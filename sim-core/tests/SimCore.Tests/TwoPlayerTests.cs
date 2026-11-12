@@ -43,10 +43,10 @@ public class TwoPlayerTests
         Assert.Equal(Economy.StartResources - 50, w.Player(A).Resources);
         Assert.Equal(Economy.StartResources, w.Player(B).Resources);
 
-        w.Enqueue(new QueueUnitCommand(rxB.Id, UnitKind.RocketTrooper), B);
+        w.Enqueue(new QueueUnitCommand(rxB.Id, UnitKind.Rifleman), B);
         w.Step();
         Assert.Equal(Economy.StartResources - 50, w.Player(A).Resources);
-        Assert.Equal(Economy.StartResources - 80, w.Player(B).Resources);
+        Assert.Equal(Economy.StartResources - 50, w.Player(B).Resources);
     }
 
     [Fact]
@@ -176,7 +176,7 @@ public class TwoPlayerTests
             for (int tick = 0; tick < 600; tick++)
             {
                 if (tick == 0) w.Enqueue(new QueueUnitCommand(rxA.Id, UnitKind.Rifleman), A);
-                if (tick == 5) w.Enqueue(new QueueUnitCommand(rxB.Id, UnitKind.RocketTrooper), B);
+                if (tick == 5) w.Enqueue(new QueueUnitCommand(rxB.Id, UnitKind.Rifleman), B);
                 if (tick == 100) w.Enqueue(new BuildCommand(BuildingKind.SupplyCenter, 30, 30), A);
                 if (tick == 200) w.Enqueue(new BuildCommand(BuildingKind.PowerPlant, 40, 40), B);
                 if (tick == 250)

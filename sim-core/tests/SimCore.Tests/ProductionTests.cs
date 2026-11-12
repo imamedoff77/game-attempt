@@ -39,12 +39,12 @@ public class ProductionTests
     {
         var (w, _, barracks, _) = NewBase();
         w.Enqueue(new QueueUnitCommand(barracks.Id, UnitKind.Rifleman));
-        w.Enqueue(new QueueUnitCommand(barracks.Id, UnitKind.RocketTrooper));
+        w.Enqueue(new QueueUnitCommand(barracks.Id, UnitKind.Rifleman));
         Run(w, Defs.Unit(UnitKind.Rifleman).BuildSeconds + 1);
         Assert.Single(w.Units);
-        Run(w, Defs.Unit(UnitKind.RocketTrooper).BuildSeconds);
+        Run(w, Defs.Unit(UnitKind.Rifleman).BuildSeconds);
         Assert.Equal(2, w.Units.Count);
-        Assert.Equal(UnitKind.RocketTrooper, w.Units[1].Kind);
+        Assert.Equal(UnitKind.Rifleman, w.Units[1].Kind);
     }
 
     [Fact]

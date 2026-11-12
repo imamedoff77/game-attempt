@@ -136,12 +136,30 @@ if (Environment.GetEnvironmentVariable("SOAK") != null)
     Console.WriteLine(hashes[0] == hashes[1] ? "hashes equal" : "HASHES DIFFER");
     return;
 }
+if (Environment.GetEnvironmentVariable("WINS") is string wn)
+{
+    // WINS=Hard-Easy: wins of the first over the second, each seed played from both sides (like AiTests).
+    string[] wp = wn.Split('-');
+    AiDifficulty da = Enum.Parse<AiDifficulty>(wp[0]), db = Enum.Parse<AiDifficulty>(wp[1]);
+    int wins = 0;
+    var res = new int[games];
+    Parallel.For(1, games + 1, i =>
+    {
+        bool swap = i % 2 == 0;
+        var r = swap ? AiMatch.Run(db, da, (ulong)i * 7919, maxMinutes) : AiMatch.Run(da, db, (ulong)i * 7919, maxMinutes);
+        res[i - 1] = r.Winner >= 0 && (r.Winner == 0) != swap ? 1 : 0;
+    });
+    foreach (int x in res) wins += x;
+    Console.WriteLine("per seed: " + string.Join(" ", res.Select((x, k) => $"{k + 1}{((k + 1) % 2 == 0 ? "s" : "")}:{x}")));
+    Console.WriteLine($"{da} beat {db} in {wins} of {games}");
+    return;
+}
 if (Environment.GetEnvironmentVariable("TRACE") is string tr)
 {
     // TRACE=Hard-Easy: one match, a line every 30 seconds per team.
     string[] tp = tr.Split('-');
     var kinds = Enum.GetValues<UnitKind>();
-    AiMatch.Run(Enum.Parse<AiDifficulty>(tp[0]), Enum.Parse<AiDifficulty>(tp[1]), 1000, maxMinutes, null, w =>
+    AiMatch.Run(Enum.Parse<AiDifficulty>(tp[0]), Enum.Parse<AiDifficulty>(tp[1]), ulong.Parse(Environment.GetEnvironmentVariable("SEED") ?? "1000"), maxMinutes, null, w =>
     {
         if (w.Tick % (30 * World.TicksPerSecond) != 0) return;
         for (int t = 0; t < 2; t++)
@@ -149,7 +167,7 @@ if (Environment.GetEnvironmentVariable("TRACE") is string tr)
             var p = w.Player(t);
             string army = string.Join(" ", kinds.Select(k => (k, n: w.Units.Count(u => u.Team == t && u.Kind == k))).Where(x => x.n > 0).Select(x => $"{x.k}{x.n}"));
             var hq = w.Buildings.FirstOrDefault(b => b.Team == t && b.Kind == BuildingKind.Hq);
-            string blds = string.Join(" ", w.Buildings.Where(b => b.Team == t && b.Kind != BuildingKind.Hq).GroupBy(b => b.Kind).Select(g => $"{g.Key}{g.Count()}"));
+            string blds = string.Join(" ", w.Buildings.Where(b => b.Team == t && b.Kind != BuildingKind.Hq).GroupBy(b => b.Kind).Select(g => $"{g.Key}{g.Count()}L{string.Join("", g.Select(x => x.Level))}"));
             Console.WriteLine($"{w.Tick / World.TicksPerSecond / 60.0,5:F1}m T{t} $%d inc{p.IncomePerMinute} pop{p.PopUsed}/{p.PopCap} L{p.BaseLevel} hq{hq?.Hp} | {army} | {blds}".Replace("%d", p.Resources.ToString()));
         }
     });

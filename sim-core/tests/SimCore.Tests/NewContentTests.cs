@@ -23,27 +23,71 @@ public class NewContentTests
         Assert.Equal(2, w.Player(team).BaseLevel);
     }
 
+    private static void UpgradeBaseTo(World w, int level)
+    {
+        while (w.Player(0).BaseLevel < level)
+        {
+            w.GiveResources(0, 2000);
+            w.Enqueue(new UpgradeBaseCommand(), 0);
+            Run(w, 75);
+        }
+        Assert.Equal(level, w.Player(0).BaseLevel);
+    }
+
+    private static void UpgradeBuildingTo(World w, Building b, int level)
+    {
+        while (b.Level < level)
+        {
+            w.GiveResources(0, 2000);
+            w.Enqueue(new UpgradeBuildingCommand(b.Id), 0);
+            Run(w, 61);
+        }
+        Assert.Equal(level, b.Level);
+    }
+
     [Fact]
-    public void Sniper_NeedsBaseLevel2()
+    public void Sniper_NeedsBaseLevel3_AndBarracksLevel3()
     {
         var w = NewBase();
         Building barracks = w.PlaceBuilding(BuildingKind.Barracks, 30, 20, 0);
         w.GiveResources(0, 1000);
         Assert.Equal(QueueCheck.LevelTooLow, w.CheckQueue(barracks, UnitKind.Sniper));
         Assert.Equal(QueueCheck.Ok, w.CheckQueue(barracks, UnitKind.Rifleman));
+        Assert.Equal(QueueCheck.LevelTooLow, w.CheckQueue(barracks, UnitKind.RocketTrooper)); // the rocket trooper opens at level 2
 
         UpgradeToLevel2(w);
+        w.GiveResources(0, 1000);
+        Assert.Equal(QueueCheck.BuildingLevelTooLow, w.CheckQueue(barracks, UnitKind.RocketTrooper)); // the barracks itself must be raised too
+        UpgradeBuildingTo(w, barracks, 2);
+        w.GiveResources(0, 1000);
+        Assert.Equal(QueueCheck.Ok, w.CheckQueue(barracks, UnitKind.RocketTrooper));
+        Assert.Equal(QueueCheck.LevelTooLow, w.CheckQueue(barracks, UnitKind.Sniper));
+
+        UpgradeBaseTo(w, 3);
+        w.GiveResources(0, 1000);
+        Assert.Equal(QueueCheck.BuildingLevelTooLow, w.CheckQueue(barracks, UnitKind.Sniper));
+        UpgradeBuildingTo(w, barracks, 3);
+        w.GiveResources(0, 1000);
         Assert.Equal(QueueCheck.Ok, w.CheckQueue(barracks, UnitKind.Sniper));
     }
 
     [Fact]
-    public void ArmoredCar_NeedsBaseLevel2()
+    public void ArmoredCar_NeedsBaseLevel3_AndFactoryLevel3()
     {
         var w = NewBase();
         Building factory = w.PlaceBuilding(BuildingKind.VehicleFactory, 30, 30, 0);
         w.GiveResources(0, 1000);
         Assert.Equal(QueueCheck.LevelTooLow, w.CheckQueue(factory, UnitKind.ArmoredCar));
-        UpgradeToLevel2(w);
+        Assert.Equal(QueueCheck.LevelTooLow, w.CheckQueue(factory, UnitKind.Tank)); // the tank opens at level 2
+        UpgradeBaseTo(w, 3);
+        w.GiveResources(0, 1000);
+        Assert.Equal(QueueCheck.BuildingLevelTooLow, w.CheckQueue(factory, UnitKind.Tank));
+        UpgradeBuildingTo(w, factory, 2);
+        w.GiveResources(0, 1000);
+        Assert.Equal(QueueCheck.Ok, w.CheckQueue(factory, UnitKind.Tank));
+        Assert.Equal(QueueCheck.BuildingLevelTooLow, w.CheckQueue(factory, UnitKind.ArmoredCar));
+        UpgradeBuildingTo(w, factory, 3);
+        w.GiveResources(0, 1000);
         Assert.Equal(QueueCheck.Ok, w.CheckQueue(factory, UnitKind.ArmoredCar));
     }
 

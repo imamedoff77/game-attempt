@@ -26,6 +26,7 @@ public sealed partial class DemoGame
     private World _noticeWorld;
     private readonly HashSet<int> _noticeConstructing = new HashSet<int>();
     private readonly Dictionary<int, (int team, BuildingKind kind, Vector3 pos)> _noticeBuildings = new Dictionary<int, (int, BuildingKind, Vector3)>();
+    private readonly Dictionary<int, int> _noticeLevels = new Dictionary<int, int>();
     private int _noticeBaseLevel;
     private bool _noticeShortage;
     private readonly int[] _noticeTiers = new int[8];
@@ -49,6 +50,7 @@ public sealed partial class DemoGame
             Notices.Clear();
             _noticeConstructing.Clear();
             _noticeBuildings.Clear();
+            _noticeLevels.Clear();
             _noticeBaseLevel = me.BaseLevel;
             _noticeShortage = false;
             for (int k = 0; k < Defs.UpgradeCount && k < _noticeTiers.Length; k++) _noticeTiers[k] = me.UpgradeTier((UpgradeKind)k);
@@ -65,6 +67,9 @@ public sealed partial class DemoGame
             Vector3 centre = new Vector3(b.X + b.Width / 2f, 0f, b.Y + b.Height / 2f);
             _noticeBuildings[b.Id] = (b.Team, b.Kind, centre);
             if (b.Team != LocalTeam) continue;
+            if (_noticeLevels.TryGetValue(b.Id, out int knownLevel) && b.Level > knownLevel)
+                Notify(NoticeKind.Good, Strings.Get("notice.factoryUp", Strings.BuildingName(b.Kind), b.Level), centre);
+            _noticeLevels[b.Id] = b.Level;
             if (b.UnderConstruction) _noticeConstructing.Add(b.Id);
             else if (_noticeConstructing.Remove(b.Id))
             {

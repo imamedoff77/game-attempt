@@ -166,6 +166,7 @@ namespace SimCore
             Fill(map, 26, 24, 5, 2); Fill(map, 20, 34, 2, 5);
             var w = new World(map);
             PlayerBase(w, true, true);
+            w.SetBaseLevel(0, 2); // tanks open at level 2, and this mission is about armour
             w.GiveResources(0, 400);
             Troops(w, UnitKind.Rifleman, 4, 12, 22, 0, false);
             w.PlaceBuilding(BuildingKind.Hq, 50, 50, 1);

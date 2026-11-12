@@ -113,19 +113,24 @@ namespace SimCore
         /// Places a building with its top-left corner on cell (x, y). Returns null if it does not fit there.
         /// Scenarios place ready buildings; a building ordered by a player starts <paramref name="underConstruction"/>.
         /// </summary>
-        public Building PlaceBuilding(BuildingKind kind, int x, int y, int team = TeamPlayer, bool underConstruction = false)
+        public Building PlaceBuilding(BuildingKind kind, int x, int y, int team = TeamPlayer, bool underConstruction = false, int facing = -1)
         {
             BuildingDef def = Defs.Building(kind);
-            if (!Map.CanPlace(x, y, def.Width, def.Height)) return null;
+            facing = facing >= 0 && facing <= 3 ? facing : Building.DefaultFacing(team);
+            Defs.Footprint(kind, facing, out int width, out int height);
+            if (!Map.CanPlace(x, y, width, height)) return null;
 
-            var building = new Building(_nextBuildingId++, kind, team, x, y, def.Width, def.Height, NextOutput(kind, team));
+            var building = new Building(_nextBuildingId++, kind, team, x, y, width, height, NextOutput(kind, team));
+            building.Facing = facing;
+            if (!underConstruction) building.Level = System.Math.Max(1, System.Math.Min(def.MaxLevel, _players[team].BaseLevel)); // a ready building of a scenario matches the base
+            if (_players[team].HasRally && Defs.Produces(kind).Length > 0) { building.HasRally = true; building.Rally = _players[team].Rally; }
             if (underConstruction && def.ConstructionSeconds > 0)
             {
                 building.ConstructionTicks = def.ConstructionSeconds * TicksPerSecond;
                 building.Hp = System.Math.Max(1, building.MaxHp / 10);
             }
-            for (int cy = y; cy < y + def.Height; cy++)
-                for (int cx = x; cx < x + def.Width; cx++)
+            for (int cy = y; cy < y + height; cy++)
+                for (int cx = x; cx < x + width; cx++)
                     Map.SetBuilding(cx, cy, building.Id);
 
             building.Phase = _buildingsPlaced[team & 1]++;
@@ -135,16 +140,17 @@ namespace SimCore
         }
 
         /// <summary>Why a building can or cannot be built at a spot.</summary>
-        public BuildCheck CheckBuild(BuildingKind kind, int x, int y, int team = TeamPlayer)
+        public BuildCheck CheckBuild(BuildingKind kind, int x, int y, int team = TeamPlayer, int facing = -1)
         {
             if (kind == BuildingKind.Hq) return BuildCheck.NotAllowed;
             BuildingDef def = Defs.Building(kind);
             if (_players[team].BaseLevel < def.RequiredLevel) return BuildCheck.LevelTooLow;
-            if (!Map.CanPlace(x, y, def.Width, def.Height)) return BuildCheck.BadGround;
+            Defs.Footprint(kind, facing >= 0 && facing <= 3 ? facing : Building.DefaultFacing(team), out int width, out int height);
+            if (!Map.CanPlace(x, y, width, height)) return BuildCheck.BadGround;
             foreach (Unit u in _units)
             {
                 int ux = u.Pos.X.ToInt(), uy = u.Pos.Y.ToInt();
-                if (ux >= x && ux < x + def.Width && uy >= y && uy < y + def.Height) return BuildCheck.UnitInWay;
+                if (ux >= x && ux < x + width && uy >= y && uy < y + height) return BuildCheck.UnitInWay;
             }
             if (_players[team].Resources < def.Cost) return BuildCheck.NotEnoughResources;
             return BuildCheck.Ok;
@@ -163,7 +169,7 @@ namespace SimCore
         private void UpdateEconomy(int team)
         {
             PlayerState p = _players[team];
-            int capacity = Economy.HqEnergy, used = 0;
+            int capacity = Economy.HqEnergyAt(p.BaseLevel), used = 0;
             foreach (Building b in _buildings)
             {
                 if (b.Team != team || b.UnderConstruction) continue; // a building under construction neither gives nor needs anything
@@ -173,7 +179,7 @@ namespace SimCore
             p.EnergyCapacity = capacity;
             p.EnergyUsed = used;
 
-            int income = Economy.HqIncomePerMinute;
+            int income = Economy.HqIncomeAt(p.BaseLevel);
             foreach (Building b in _buildings)
             {
                 if (b.Team != team) continue;
@@ -194,7 +200,13 @@ namespace SimCore
         public void GiveResources(int team, int amount) => _players[team].Resources += amount;
 
         /// <summary>Scenario set-up: a team that starts at a higher base level (more buildings and units open to it, bigger unit limit).</summary>
-        public void SetBaseLevel(int team, int level) => _players[team].BaseLevel = level < 1 ? 1 : level > Economy.MaxBaseLevel ? Economy.MaxBaseLevel : level;
+        public void SetBaseLevel(int team, int level)
+        {
+            _players[team].BaseLevel = level < 1 ? 1 : level > Economy.MaxBaseLevel ? Economy.MaxBaseLevel : level;
+            foreach (Building b in _buildings) // factories that already stand come up to the new level
+                if (b.Team == team && !b.UnderConstruction) b.Level = System.Math.Max(b.Level, System.Math.Min(Defs.Building(b.Kind).MaxLevel, _players[team].BaseLevel));
+            UpdateEconomy(team);
+        }
 
         /// <summary>Scenario set-up: a building that starts weaker (or stronger) than the standard health, e.g. a damaged enemy outpost.</summary>
         public void SetBuildingHealth(int buildingId, int hp)
@@ -264,6 +276,7 @@ namespace SimCore
                 h.Add((int)p.ResearchKind);
                 h.Add(p.ResearchTicksLeft);
                 h.Add(p.UpgradeTicksLeft);
+                if (p.HasRally) { h.Add(0x5252); h.Add(p.Rally); }
                 for (int k = 0; k < p.KitBonusMilli.Length; k++) if (p.KitBonusMilli[k] != 0) { h.Add(k); h.Add(p.KitBonusMilli[k]); } // only when used, so plain matches keep their hash
             }
             h.Add(_nextUnitId);
@@ -284,6 +297,9 @@ namespace SimCore
                 h.Add(b.Spawned);
                 h.Add(b.HasRally ? 1 : 0);
                 if (b.HasRally) h.Add(b.Rally);
+                if (b.Facing != Building.DefaultFacing(b.Team)) { h.Add(0x4643); h.Add(b.Facing); } // only when turned, so plain matches keep their hash
+                if (b.Level > 1) { h.Add(0x4C56); h.Add(b.Level); }
+                if (b.UpgradeTicksLeft > 0) { h.Add(0x5550); h.Add(b.UpgradeTicksLeft); }
                 foreach (UnitKind q in b.QueueList) h.Add((int)q);
             }
             foreach (Unit u in _units)
@@ -347,6 +363,7 @@ namespace SimCore
                     case SetRallyCommand rally: ApplyRally(rally); break;
                     case CancelBuildCommand cancelBuild: ApplyCancelBuild(cancelBuild); break;
                     case UpgradeBaseCommand upgrade: ApplyUpgradeBase(upgrade); break;
+                    case UpgradeBuildingCommand upgradeBuilding: ApplyUpgradeBuilding(upgradeBuilding); break;
                     case ResearchCommand research: ApplyResearch(research); break;
                     case StopCommand stop: ApplyStop(stop.UnitIds, stop.Team, false); break;
                     case HoldCommand hold: ApplyStop(hold.UnitIds, hold.Team, true); break;
@@ -466,10 +483,10 @@ namespace SimCore
 
         private void ApplyBuild(BuildCommand cmd)
         {
-            if (!ValidTeam(cmd.Team) || CheckBuild(cmd.Kind, cmd.X, cmd.Y, cmd.Team) != BuildCheck.Ok) return;
+            if (!ValidTeam(cmd.Team) || CheckBuild(cmd.Kind, cmd.X, cmd.Y, cmd.Team, cmd.Facing) != BuildCheck.Ok) return;
 
             _players[cmd.Team].Resources -= Defs.Building(cmd.Kind).Cost;
-            PlaceBuilding(cmd.Kind, cmd.X, cmd.Y, cmd.Team, underConstruction: true);
+            PlaceBuilding(cmd.Kind, cmd.X, cmd.Y, cmd.Team, underConstruction: true, facing: cmd.Facing);
 
             // The new building may block routes that were planned before it existed.
             foreach (Unit u in _units)
@@ -480,17 +497,74 @@ namespace SimCore
         public QueueCheck CheckQueue(Building b, UnitKind kind)
         {
             if (b == null || b.UnderConstruction || Defs.Unit(kind).Producer != b.Kind) return QueueCheck.NotAllowed;
-            if (b.QueueList.Count >= MaxQueue) return QueueCheck.QueueFull;
             PlayerState p = _players[b.Team];
             if (p.BaseLevel < Defs.Unit(kind).RequiredLevel) return QueueCheck.LevelTooLow;
+            if (b.Level < Defs.Unit(kind).RequiredLevel) return QueueCheck.BuildingLevelTooLow;
+            if (b.QueueList.Count >= MaxQueue) return QueueCheck.QueueFull;
             if (p.PopUsed + Defs.Unit(kind).Pop > p.PopCap) return QueueCheck.PopCapReached;
             if (p.Resources < Defs.Unit(kind).Cost) return QueueCheck.NotEnoughResources;
             return QueueCheck.Ok;
         }
 
+        /// <summary>How near to being allowed a refusal is (higher = nearer); used to report the most useful reason when no building can take a unit.</summary>
+        private static int Closeness(QueueCheck c)
+        {
+            switch (c)
+            {
+                case QueueCheck.Ok: return 9;
+                case QueueCheck.NotEnoughResources: return 7;
+                case QueueCheck.PopCapReached: return 6;
+                case QueueCheck.QueueFull: return 5;
+                case QueueCheck.BuildingLevelTooLow: return 4;
+                case QueueCheck.LevelTooLow: return 3;
+                case QueueCheck.NoBuilding: return 1;
+                default: return 0;
+            }
+        }
+
+        /// <summary>
+        /// Why a team can or cannot queue a unit "anywhere": Ok when at least one finished building can take it, otherwise the reason
+        /// of the building that came nearest (NoBuilding when the team has none that makes this unit).
+        /// </summary>
+        public QueueCheck CheckQueueAny(int team, UnitKind kind)
+        {
+            if (!ValidTeam(team)) return QueueCheck.NotAllowed;
+            QueueCheck best = QueueCheck.NoBuilding;
+            foreach (Building b in _buildings)
+            {
+                if (b.Team != team || b.Hp <= 0 || b.Kind != Defs.Unit(kind).Producer || b.UnderConstruction) continue;
+                QueueCheck c = CheckQueue(b, kind);
+                if (best == QueueCheck.NoBuilding || Closeness(c) > Closeness(best)) best = c;
+            }
+            return best;
+        }
+
+        /// <summary>Time (ticks) a building still needs to finish everything in its queue, plus a penalty while it has no energy.</summary>
+        public int QueueLoad(Building b)
+        {
+            int load = -b.Progress;
+            foreach (UnitKind q in b.QueueList) load += Defs.Unit(q).BuildSeconds * TicksPerSecond;
+            if (!b.Powered) load += 100000;
+            return load;
+        }
+
+        /// <summary>The building a unit queued "anywhere" goes to: among those that can take it, the one with the least work waiting (lowest id on a tie). Null if none.</summary>
+        public Building ChooseProducer(int team, UnitKind kind)
+        {
+            Building best = null;
+            int bestLoad = 0;
+            foreach (Building b in _buildings)
+            {
+                if (b.Team != team || b.Hp <= 0 || b.Kind != Defs.Unit(kind).Producer || CheckQueue(b, kind) != QueueCheck.Ok) continue;
+                int load = QueueLoad(b);
+                if (best == null || load < bestLoad || (load == bestLoad && b.Id < best.Id)) { best = b; bestLoad = load; }
+            }
+            return best;
+        }
+
         private void ApplyQueue(QueueUnitCommand cmd)
         {
-            Building b = GetBuilding(cmd.BuildingId);
+            Building b = cmd.BuildingId == QueueUnitCommand.AnyBuilding ? ChooseProducer(cmd.Team, cmd.Kind) : GetBuilding(cmd.BuildingId);
             if (b == null || b.Team != cmd.Team || CheckQueue(b, cmd.Kind) != QueueCheck.Ok) return;
             _players[b.Team].Resources -= Defs.Unit(cmd.Kind).Cost;
             b.QueueList.Add(cmd.Kind);
@@ -602,6 +676,36 @@ namespace SimCore
             }
         }
 
+        /// <summary>Why a factory can or cannot be raised to its next level now.</summary>
+        public UpgradeCheck CheckUpgradeBuilding(Building b)
+        {
+            if (b == null || b.Hp <= 0 || b.UnderConstruction || Defs.Building(b.Kind).MaxLevel <= 1) return UpgradeCheck.NotAllowed;
+            BuildingDef def = Defs.Building(b.Kind);
+            if (b.Level >= def.MaxLevel) return UpgradeCheck.MaxLevel;
+            if (b.Upgrading) return UpgradeCheck.AlreadyUpgrading;
+            PlayerState p = _players[b.Team];
+            if (p.BaseLevel < b.Level + 1) return UpgradeCheck.BaseLevelTooLow;
+            if (p.Resources < def.UpgradeCost[b.Level - 1]) return UpgradeCheck.NotEnoughResources;
+            return UpgradeCheck.Ok;
+        }
+
+        private void ApplyUpgradeBuilding(UpgradeBuildingCommand cmd)
+        {
+            Building b = GetBuilding(cmd.BuildingId);
+            if (b == null || b.Team != cmd.Team || CheckUpgradeBuilding(b) != UpgradeCheck.Ok) return;
+            BuildingDef def = Defs.Building(b.Kind);
+            _players[b.Team].Resources -= def.UpgradeCost[b.Level - 1];
+            b.UpgradeTicksLeft = def.UpgradeSeconds[b.Level - 1] * TicksPerSecond;
+        }
+
+        /// <summary>Progress of the upgrade under way, 0..1000 (thousandths); 0 when none.</summary>
+        public int UpgradeProgressMilli(Building b)
+        {
+            if (b == null || !b.Upgrading) return 0;
+            int total = Defs.Building(b.Kind).UpgradeSeconds[b.Level - 1] * TicksPerSecond;
+            return (total - b.UpgradeTicksLeft) * 1000 / total;
+        }
+
         private void ApplyUpgradeBase(UpgradeBaseCommand cmd)
         {
             if (CheckUpgradeBase(cmd.Team) != UpgradeCheck.Ok) return;
@@ -626,7 +730,12 @@ namespace SimCore
             foreach (PlayerState p in _players)
             {
                 if (p.UpgradeTicksLeft == 0) continue;
-                if (--p.UpgradeTicksLeft == 0) p.BaseLevel++;
+                if (--p.UpgradeTicksLeft == 0) { p.BaseLevel++; UpdateEconomy(System.Array.IndexOf(_players, p)); }
+            }
+            foreach (Building b in _buildings)
+            {
+                if (b.UpgradeTicksLeft == 0 || b.Hp <= 0) continue;
+                if (--b.UpgradeTicksLeft == 0) b.Level++;
             }
             for (int team = 0; team < TeamCount; team++)
             {
@@ -655,9 +764,21 @@ namespace SimCore
         private void ApplyRally(SetRallyCommand cmd)
         {
             Building b = GetBuilding(cmd.BuildingId);
-            if (b == null || b.Team != cmd.Team || Defs.Produces(b.Kind).Length == 0) return;
+            if (b == null || b.Team != cmd.Team) return;
+            Vec2 point = ClampToMap(cmd.Point);
+            if (b.Kind == BuildingKind.Hq)
+            {
+                // The base sets the gathering point for all its production buildings, and for the ones built later.
+                PlayerState p = _players[b.Team];
+                p.HasRally = true;
+                p.Rally = point;
+                foreach (Building other in _buildings)
+                    if (other.Team == b.Team && Defs.Produces(other.Kind).Length > 0) { other.HasRally = true; other.Rally = point; }
+                return;
+            }
+            if (Defs.Produces(b.Kind).Length == 0) return;
             b.HasRally = true;
-            b.Rally = ClampToMap(cmd.Point);
+            b.Rally = point;
         }
 
         /// <summary>Advances every working production building; finished units appear at its door.</summary>
@@ -674,16 +795,25 @@ namespace SimCore
                     continue;
                 }
 
-                // Door is on the side facing the middle of the map: the low-y side for team 0, and the half-turn image of that for team 1.
-                var door = b.Team == 0
-                    ? Pathfinder.NearestWalkable(Map, b.X + b.Width / 2, b.Y - 1)
-                    : Pathfinder.NearestWalkable(Map, b.X + (b.Width - 1) / 2, b.Y + b.Height, mirrored: true);
+                // The door is on the side the building faces (by default the one towards the middle of the map: low y for team 0, high y for team 1).
+                // Sides 2 and 3 are the half-turn images of 0 and 1, so a mirrored match stays mirrored.
+                (int x, int y)? door;
+                switch (b.Facing)
+                {
+                    case 1: door = Pathfinder.NearestWalkable(Map, b.X + b.Width, b.Y + b.Height / 2); break;
+                    case 2: door = Pathfinder.NearestWalkable(Map, b.X + (b.Width - 1) / 2, b.Y + b.Height, mirrored: true); break;
+                    case 3: door = Pathfinder.NearestWalkable(Map, b.X - 1, b.Y + (b.Height - 1) / 2, mirrored: true); break;
+                    default: door = Pathfinder.NearestWalkable(Map, b.X + b.Width / 2, b.Y - 1); break;
+                }
                 if (door == null) continue; // nowhere to stand: wait
 
                 // Spread new units a little so they do not all sit on one point.
                 Fix64 offset = Fix64.FromFraction((b.Spawned % 4) * 3 - 4, 10);
-                if (b.Team == 1) offset = -offset; // half-turn image of team 0's spread
-                var pos = new Vec2(Fix64.FromInt(door.Value.x) + Fix64.Half + offset, Fix64.FromInt(door.Value.y) + Fix64.Half);
+                if (b.Facing >= 2) offset = -offset; // half-turn image of the spread of sides 0 and 1
+                bool sideways = b.Facing == 1 || b.Facing == 3; // on a side door the units spread along y
+                var pos = sideways
+                    ? new Vec2(Fix64.FromInt(door.Value.x) + Fix64.Half, Fix64.FromInt(door.Value.y) + Fix64.Half + offset)
+                    : new Vec2(Fix64.FromInt(door.Value.x) + Fix64.Half + offset, Fix64.FromInt(door.Value.y) + Fix64.Half);
                 b.Spawned++;
                 b.QueueList.RemoveAt(0);
                 b.Progress = 0;

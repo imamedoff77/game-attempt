@@ -52,3 +52,14 @@ Nəticə (32 oyun, komanda 0 : komanda 1): Easy 19:13, Medium 17:15, Hard 15:17.
 
 - İlk böyük toqquşmanı itirən AI çətin qayıdır: qalibin ordusu bazanın qapısında yeni çıxan vahidləri tək-tək öldürür ("spawn camping"). Oyunçu üçün də belədir; ehtiyac olarsa müdafiə qüllələri/geri çəkilmə ilə yumşaldılar.
 - AI yalnız Rifleman/RocketTrooper/Jeep əsasında oynayır; Sniper/ArmoredCar/Tank nadir seçilir.
+
+## Fabrik və baza səviyyələri (2026-11-11)
+
+- Baza max 5 səviyyə (`baseUpgradeCost` 400/800/1400/2200). Hər səviyyə bazanın öz enerjisini (`hqEnergy` 20→60) və pulunu (`hqIncomePerMinute` 100→280) artırır.
+- Barracks və VehicleFactory 1-ci səviyyədən başlayır, max 3. Upgrade qiyməti: Barracks 250/500, VehicleFactory 350/700; müddət 30/50 s və 40/60 s. Fabrikin səviyyəsi bazanın səviyyəsini keçə bilməz.
+- Vahid üçün həm baza, həm də istehsal edən fabrik `requiredLevel` səviyyəsində olmalıdır.
+- Vahid səviyyələri (istifadəçinin nümunəsi, tətbiq olundu): Rifleman, Jeep = 1; RocketTrooper, Tank = 2; Sniper, ArmoredCar = 3. Yəni Rocket/Tank üçün baza 2 + həmin fabrik 2, Sniper/ArmoredCar üçün baza 3 + fabrik 3 lazımdır.
+- Bunun üçün AI-ya "texnologiya planı" yazıldı (yalnız Hard): baza dolu olanda (boş pop ≤ 3) pul yığıb bazanı və fabrikləri 2-ci səviyyəyə qaldırır (`TechLevel`), ilk dalğanı texnologiya hazır olana qədər gecikdirir (`Teched`) və piyada payını 40%-ə salır (Jeep sayı artır, çünki ilk toqquşmanı Jeep qazanır). Nəticə (24 oyun): Hard>Easy 24/24, Hard>Medium 24/24, Medium>Easy 24/24. Qeyd: Hard Tank/Rocket demək olar ki, hələ də qurmur, üstünlüyü Jeep miksindən və fokus atəşindən gəlir; Hard vs Hard matçı ~21 dəq.
+- Kampaniya (BalanceReport `CAMPAIGN=1`, AI oyunçu əvəzinə): 7-ci missiya (Medium 4/4 → 1/4) və 10-cu missiya (Hard 3/4 → 1/4) çətinləşdi; qalanları təxminən eyni. İnsan oyunçu üçün ayrıca tənzimləmə lazım ola bilər.
+- Ölçmək üçün: `WINS=Hard-Easy dotnet run -c Release -- 24` və `SEED=... TRACE=Hard-Medium` (sim-core/tests/BalanceReport).
+- `QueueUnitCommand` `BuildingId = 0` ilə yük bölgüsü: ən az növbəsi olan fabrikə (bərabərlikdə ən kiçik id) gedir, enerjisiz fabrik +100000 cərimə alır.

@@ -118,24 +118,28 @@ public class MatchRulesTests
         var w = NewWorld();
         SetResources(w, A, 100000);
         Building barracks = Barracks(w);
+        Building factory = w.Buildings.First(b => b.Kind == BuildingKind.VehicleFactory);
+        Building factory2 = w.PlaceBuilding(BuildingKind.VehicleFactory, 36, 30, A);
         Assert.Equal(20, w.Player(A).PopCap);
 
-        // Rocket troopers take 2 places each: ten fill the base, but a queue holds only 5 and units come out one by one.
-        for (int i = 0; i < World.MaxQueue; i++) w.Enqueue(new QueueUnitCommand(barracks.Id, UnitKind.RocketTrooper));
+        // Jeeps take 2 places each: five fill half the base, but a queue holds only 5 and units come out one by one.
+        for (int i = 0; i < World.MaxQueue; i++) w.Enqueue(new QueueUnitCommand(factory.Id, UnitKind.Jeep));
         w.Step();
         Assert.Equal(10, w.Player(A).PopUsed); // queued units already count
-        Assert.Equal(QueueCheck.QueueFull, w.CheckQueue(barracks, UnitKind.RocketTrooper));
+        Assert.Equal(QueueCheck.QueueFull, w.CheckQueue(factory, UnitKind.Jeep));
 
-        // Fill the rest with tanks (4 places): 10 left = two tanks.
-        Building factory = w.Buildings.First(b => b.Kind == BuildingKind.VehicleFactory);
-        w.Enqueue(new QueueUnitCommand(factory.Id, UnitKind.Tank));
-        w.Enqueue(new QueueUnitCommand(factory.Id, UnitKind.Tank));
+        // Fill the rest with jeeps from the second factory (8 more places), then two riflemen: exactly the limit.
+        for (int i = 0; i < 4; i++) w.Enqueue(new QueueUnitCommand(factory2.Id, UnitKind.Jeep));
         w.Step();
         Assert.Equal(18, w.Player(A).PopUsed);
-        Assert.Equal(QueueCheck.PopCapReached, w.CheckQueue(factory, UnitKind.Tank));   // 18 + 4 > 20
-        w.Enqueue(new QueueUnitCommand(factory.Id, UnitKind.Tank));
+        w.Enqueue(new QueueUnitCommand(barracks.Id, UnitKind.Rifleman));
+        w.Enqueue(new QueueUnitCommand(barracks.Id, UnitKind.Rifleman));
         w.Step();
-        Assert.Equal(2, factory.Queue.Count);                                              // the third was refused
+        Assert.Equal(20, w.Player(A).PopUsed);
+        Assert.Equal(QueueCheck.PopCapReached, w.CheckQueue(barracks, UnitKind.Rifleman));   // 20 + 1 > 20
+        w.Enqueue(new QueueUnitCommand(barracks.Id, UnitKind.Rifleman));
+        w.Step();
+        Assert.Equal(2, barracks.Queue.Count);                                               // the third was refused
     }
 
     [Fact]
@@ -144,7 +148,8 @@ public class MatchRulesTests
         var w = NewWorld();
         SetResources(w, A, 100000);
         Building factory = w.Buildings.First(b => b.Kind == BuildingKind.VehicleFactory);
-        for (int i = 0; i < 5; i++) w.Enqueue(new QueueUnitCommand(factory.Id, UnitKind.Tank)); // 5 x 4 = 20 places: exactly the limit
+        Building factory2 = w.PlaceBuilding(BuildingKind.VehicleFactory, 36, 30, A);
+        for (int i = 0; i < 5; i++) { w.Enqueue(new QueueUnitCommand(factory.Id, UnitKind.Jeep)); w.Enqueue(new QueueUnitCommand(factory2.Id, UnitKind.Jeep)); } // 10 x 2 = 20 places: exactly the limit
         w.Step();
         Assert.Equal(20, w.Player(A).PopUsed);
         int before = w.Player(A).Resources;
@@ -160,9 +165,9 @@ public class MatchRulesTests
         var w = NewWorld();
         Building factory = w.Buildings.First(b => b.Kind == BuildingKind.VehicleFactory);
         SetResources(w, A, 5000);
-        w.Enqueue(new QueueUnitCommand(factory.Id, UnitKind.Tank));
+        w.Enqueue(new QueueUnitCommand(factory.Id, UnitKind.Jeep));
         w.Step();
-        Assert.Equal(4, w.Player(A).PopUsed);
+        Assert.Equal(2, w.Player(A).PopUsed);
         w.Enqueue(new CancelQueuedCommand(factory.Id, 0));
         w.Step();
         Assert.Equal(0, w.Player(A).PopUsed);

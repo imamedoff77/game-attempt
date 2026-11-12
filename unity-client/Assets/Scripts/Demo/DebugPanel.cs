@@ -140,6 +140,7 @@ public sealed class DebugPanel : MonoBehaviour
             Application.targetFrameRate = _uncapped ? 120 : 60;
         }
         if (_game.Mode == DemoGame.GameMode.Campaign && GUI.Button(r[7], "Win mission", _button)) _game.DebugWinMission();
+        else if (_game.Mode == DemoGame.GameMode.Skirmish && GUI.Button(r[7], "+2000 resources", _button)) _game.DebugGiveResources(2000);
         if (GUI.Button(r[8], "+500 credits", _button)) _game.DebugAddCredits(500);
         if (GUI.Button(r[5], _dusk ? "Mood: DUSK (dark)" : "Mood: day", _button)) SetDusk(!_dusk);
 

@@ -102,8 +102,11 @@ public class GameDataTests
     public void NewUnitsAndBuildings_NeedBaseLevel2()
     {
         Assert.Equal(1, Defs.Unit(UnitKind.Rifleman).RequiredLevel);
-        Assert.Equal(2, Defs.Unit(UnitKind.Sniper).RequiredLevel);
-        Assert.Equal(2, Defs.Unit(UnitKind.ArmoredCar).RequiredLevel);
+        Assert.Equal(2, Defs.Unit(UnitKind.RocketTrooper).RequiredLevel);
+        Assert.Equal(2, Defs.Unit(UnitKind.Tank).RequiredLevel);
+        Assert.Equal(1, Defs.Unit(UnitKind.Jeep).RequiredLevel);
+        Assert.Equal(3, Defs.Unit(UnitKind.Sniper).RequiredLevel);
+        Assert.Equal(3, Defs.Unit(UnitKind.ArmoredCar).RequiredLevel);
         Assert.Equal(1, Defs.Building(BuildingKind.Barracks).RequiredLevel);
         Assert.Equal(2, Defs.Building(BuildingKind.Tower).RequiredLevel);
         Assert.True(Defs.Building(BuildingKind.Tower).Damage > 0);

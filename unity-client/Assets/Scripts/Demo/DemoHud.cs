@@ -21,6 +21,8 @@ public sealed partial class DemoHud : MonoBehaviour
     private GUIStyle _timerStyle;
     private Texture2D _boltIcon;
     private bool _menuOpen;
+    /// <summary>The panel that orders units from all factories at once (see <see cref="DrawTrainPanel"/>).</summary>
+    private bool _trainOpen;
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
     private DebugPanel _debug;
 #endif
@@ -28,6 +30,14 @@ public sealed partial class DemoHud : MonoBehaviour
     private void Awake()
     {
         _game = GetComponent<DemoGame>();
+        // A tap on the map while a card panel is open only closes the panel.
+        _game.TapInterceptor = () =>
+        {
+            if (!_menuOpen && !_trainOpen) return false;
+            _menuOpen = false;
+            _trainOpen = false;
+            return true;
+        };
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
         _debug = gameObject.AddComponent<DebugPanel>();
 #endif
@@ -65,13 +75,16 @@ public sealed partial class DemoHud : MonoBehaviour
         DrawStats(world);
         DrawUnpoweredIcons(world);
         DrawProductionBars(world);
+        DrawUpgradeBars(world);
+        DrawAttackTargets(world);
         DrawHealthBars(world);
         DrawOrderLines(world);
 
         // Top-right: build menu button and simulation speed.
         Rect[] top = TopRects();
         GUI.enabled = !_game.Placing;
-        if (IconButton(top[0], UiTheme.Icon.Build, Strings.Get(_menuOpen ? "menu.buildClose" : "menu.build"), _menuOpen)) _menuOpen = !_menuOpen;
+        if (IconButton(top[0], UiTheme.Icon.Build, Strings.Get(_menuOpen ? "menu.buildClose" : "menu.build"), _menuOpen)) { _menuOpen = !_menuOpen; _trainOpen = false; if (_menuOpen) _game.DeselectBuilding(); }
+        if (IconButton(TrainRect(), UiTheme.Icon.Train, Strings.Get("button.train"), _trainOpen)) { _trainOpen = !_trainOpen; _menuOpen = false; if (_trainOpen) _game.DeselectBuilding(); }
         GUI.enabled = true;
         float[] speeds = _game.IsOfflineMatch ? SkirmishSpeeds : Speeds;
         for (int i = 0; i < speeds.Length && !_game.OnlineMatch; i++) // everybody plays at normal speed online
@@ -93,20 +106,23 @@ public sealed partial class DemoHud : MonoBehaviour
             if (GUI.Button(top[2], Strings.Get("online.leave"), _button)) LeaveToMenu(); // just drops the connection: the opponent waits, then wins when the grace time ends
         }
 
-        if (_game.SelectedBuilding != null) _menuOpen = false;
+        if (_game.SelectedBuilding != null || _game.Placing) { _menuOpen = false; _trainOpen = false; }
         if (_menuOpen && !_game.Placing) DrawBuildMenu(world);
+        if (_trainOpen && !_game.Placing) DrawTrainPanel(world);
         if (_game.SelectedBuilding != null && !_game.Placing) DrawBuildingPanel(world, _game.SelectedBuilding);
         if (SelectionBarVisible) DrawSelectionBar(world);
         if (OrderButtonsVisible) DrawOrderButtons();
         else if (_game.AttackMovePending) _game.AttackMovePending = false;
         DrawToasts();
-        if (_game.SettingRally) DrawHint(Strings.Get("hint.rally"));
+        if (_game.SettingRally) DrawHint(Strings.Get(_game.SelectedBuilding != null && _game.SelectedBuilding.Kind == BuildingKind.Hq ? "hint.rallyAll" : "hint.rally"));
+        else if (_game.Touch.BoxMode && !_game.Placing)
+            DrawHintAt(new Rect(Screen.height * 0.015f, Screen.height * 0.575f, Screen.width * 0.36f, Screen.height * 0.1f), Strings.Get("hint.box")); // above the minimap, clear of the cards
 
         // Bottom-right row
         Rect[] r = BottomRects();
-        if (IconButton(r[0], null, Strings.Get("button.box"), _game.Touch.BoxMode)) _game.Touch.BoxMode = !_game.Touch.BoxMode;
         if (_game.Placing)
         {
+            if (IconButton(r[0], UiTheme.Icon.Rotate, null)) _game.RotatePlacement();
             GUI.enabled = _game.PlacingCheck == BuildCheck.Ok;
             if (GUI.Button(r[1], Strings.Get("button.confirm"), _button)) _game.ConfirmPlacement();
             GUI.enabled = true;
@@ -115,6 +131,7 @@ public sealed partial class DemoHud : MonoBehaviour
         }
         else
         {
+            if (IconButton(r[0], UiTheme.Icon.Box, null, _game.Touch.BoxMode)) _game.Touch.BoxMode = !_game.Touch.BoxMode;
             if (IconButton(r[1], UiTheme.Icon.Units, Strings.Get("button.selectAll"))) _game.SelectAll();
             if (IconButton(r[2], UiTheme.Icon.Cross, Strings.Get("button.clear"))) _game.ClearSelection();
         }
@@ -223,9 +240,7 @@ public sealed partial class DemoHud : MonoBehaviour
         {
             UnitDef ud = Defs.Unit(units[i]);
             QueueCheck check = world.CheckQueue(b, units[i]);
-            string problem = check == QueueCheck.QueueFull ? Strings.Get("card.queueFull")
-                           : check == QueueCheck.PopCapReached ? Strings.Get("card.popFull")
-                           : check == QueueCheck.LevelTooLow ? Strings.Get("card.locked", ud.RequiredLevel) : null;
+            string problem = QueueProblem(check, ud, b.Kind);
             int queued = 0;
             foreach (UnitKind k in b.Queue) if (k == units[i]) queued++;
             if (Card(cards[i], Strings.UnitName(units[i]), ud.Cost, UiTheme.Icon.Clock, Strings.Get("card.seconds", ud.BuildSeconds),
@@ -241,7 +256,13 @@ public sealed partial class DemoHud : MonoBehaviour
             GUI.enabled = true;
             if (IconButton(rects[next++], UiTheme.Icon.Flag, Strings.Get(b.HasRally ? "panel.rallyChange" : "panel.rally"), _game.SettingRally)) _game.BeginSetRally();
         }
-        if (b.Kind == BuildingKind.Hq) DrawHqCards(world, me);
+        if (b.Kind == BuildingKind.Hq)
+        {
+            // The base sets one gathering point for all its factories at once; a single factory can be changed afterwards.
+            if (IconButton(rects[next++], UiTheme.Icon.Flag, Strings.Get(me.HasRally ? "panel.rallyAllChange" : "panel.rallyAll"), _game.SettingRally)) _game.BeginSetRally();
+            DrawHqCards(world, me);
+        }
+        if (Defs.Building(b.Kind).MaxLevel > 1) DrawBuildingUpgradeButton(rects[next++], world, b, me);
         GUI.enabled = true;
     }
 
@@ -249,8 +270,10 @@ public sealed partial class DemoHud : MonoBehaviour
     private static int PanelButtonCount(Building b)
     {
         if (b.UnderConstruction) return 1;
-        int units = Defs.Produces(b.Kind).Length;
-        return units == 0 ? 0 : 2; // cancel last + rally; unit and HQ cards sit in the bottom row
+        int count = Defs.Produces(b.Kind).Length == 0 ? 0 : 2; // cancel last + rally; unit and HQ cards sit in the bottom row
+        if (b.Kind == BuildingKind.Hq) count++;               // rally point for all factories
+        if (Defs.Building(b.Kind).MaxLevel > 1) count++;      // upgrade
+        return count;
     }
 
     private static int ConstructionPercent(Building b) =>
@@ -548,11 +571,14 @@ public sealed partial class DemoHud : MonoBehaviour
             case BuildCheck.LevelTooLow: reason = Strings.Get("hint.placeLevel"); break;
             default: reason = Strings.Get("hint.placeNo"); break;
         }
+        string text = Strings.Get("hint.place", Strings.BuildingName(_game.PlacingKind), reason);
+        text += "\n" + (Defs.Produces(_game.PlacingKind).Length > 0
+            ? Strings.Get("hint.placeDoor", Strings.Get("door." + _game.PlacingFacing))
+            : Strings.Get("hint.placeTwice"));
         float pad = Screen.height * 0.02f;
-        float y = Screen.height - Screen.height * 0.11f - Screen.height * 0.015f - Screen.height * 0.12f;
-        GUI.Box(new Rect(Screen.width - Screen.width * 0.5f - pad, y, Screen.width * 0.5f, Screen.height * 0.1f), "");
-        GUI.Label(new Rect(Screen.width - Screen.width * 0.5f - pad, y, Screen.width * 0.5f, Screen.height * 0.1f),
-            Strings.Get("hint.place", Strings.BuildingName(_game.PlacingKind), reason), _label);
+        float h = Screen.height * 0.17f;
+        float y = Screen.height - Screen.height * 0.11f - Screen.height * 0.015f - h - Screen.height * 0.01f;
+        DrawHintAt(new Rect(Screen.width - Screen.width * 0.5f - pad, y, Screen.width * 0.5f, h), text);
     }
 
     /// <summary>A lightning icon over every building that is switched off for lack of energy.</summary>
@@ -576,6 +602,7 @@ public sealed partial class DemoHud : MonoBehaviour
     {
         foreach (Rect r in TopRects()) yield return r;
         foreach (Rect r in BottomRects()) yield return r;
+        yield return TrainRect();
         if (MinimapVisible) yield return MinimapRect();
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
         if (_debug != null)
@@ -583,6 +610,8 @@ public sealed partial class DemoHud : MonoBehaviour
 #endif
         if (_menuOpen && !_game.Placing)
             foreach (Rect r in MenuRects()) yield return r;
+        if (_trainOpen && !_game.Placing)
+            foreach (Rect r in CardRects(TrainUnits.Length)) yield return r;
         if (_game.SelectedBuilding != null && !_game.Placing)
         {
             foreach (Rect r in PanelRects(PanelButtonCount(_game.SelectedBuilding))) yield return r;
@@ -631,7 +660,19 @@ public sealed partial class DemoHud : MonoBehaviour
         var rects = new Rect[count];
         for (int i = 0; i < count; i++)
             rects[i] = new Rect(Screen.width - (count - i) * (w + gap), y, w, h);
+        // The first button only carries an icon (box select / rotate): narrower, next to the second one.
+        float narrow = h * 1.25f;
+        rects[0] = new Rect(rects[1].x - gap - narrow, y, narrow, h);
         return rects;
+    }
+
+    /// <summary>The Train button, just left of Build.</summary>
+    private static Rect TrainRect()
+    {
+        Rect[] top = TopRects();
+        float gap = Screen.height * 0.015f;
+        float w = Screen.width * 0.085f;
+        return new Rect(top[0].x - gap - w, top[0].y, w, top[0].height);
     }
 
     /// <summary>Top-right: Build, x1, x5, x10.</summary>

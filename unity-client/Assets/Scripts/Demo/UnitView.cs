@@ -21,7 +21,7 @@ public sealed class UnitView : MonoBehaviour
     public bool IsVehicle => _vehicle;
     public Transform Body => _body;
 
-    public static UnitView Create(Unit unit, GameObject model, Material palette, Material ringMaterial, Material arcMaterial, Vector3 modelScale)
+    public static UnitView Create(Unit unit, GameObject model, Material palette, Material ringMaterial, Material arcMaterial, Material teamDiscMaterial, Vector3 modelScale)
     {
         var root = new GameObject("Unit " + unit.Id + " " + unit.Kind);
         var view = root.AddComponent<UnitView>();
@@ -39,6 +39,9 @@ public sealed class UnitView : MonoBehaviour
 
         float outer = Defs.Unit(unit.Kind).Class == UnitClass.Infantry ? 0.55f
                     : unit.Kind == UnitKind.Tank ? 1.4f : 1.0f;
+        // A soft disc in the team colour under every unit: friend and foe read at a glance, even from far away.
+        GameObject disc = MeshFactory.Spawn("TeamDisc", MeshFactory.Ring(0.05f, outer * (view._vehicle ? 1.0f : 0.62f)), teamDiscMaterial, root.transform);
+        disc.transform.localPosition = new Vector3(0f, 0.04f, 0f);
         view._selectionRing = MeshFactory.Spawn("SelectionRing", MeshFactory.Ring(outer * 0.82f, outer), ringMaterial, root.transform);
         view._selectionRing.transform.localPosition = new Vector3(0f, 0.06f, 0f);
         view._selectionRing.SetActive(false);

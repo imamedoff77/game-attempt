@@ -14,11 +14,11 @@ namespace SimCore
         public const int MaxUnitsPerCommand = 256;
         public const int MaxCommandsPerTurn = 64;
         /// <summary>Bytes of the biggest possible single command.</summary>
-        public const int MaxCommandBytes = 1 + 2 + MaxUnitsPerCommand * 4 + 4 + 8 + 8;
+        public const int MaxCommandBytes = 1 + 2 + MaxUnitsPerCommand * 4 + 4 + 8 + 8 + 1;
         /// <summary>Map coordinates beyond this are never valid (keeps later arithmetic far from overflow).</summary>
         private const int MaxCoordinate = 4096;
 
-        private const byte TypeMove = 1, TypeBuild = 2, TypeQueue = 3, TypeCancel = 4, TypeRally = 5, TypeAttack = 6, TypeCancelBuild = 7, TypeUpgradeBase = 8, TypeResearch = 9, TypeSurrender = 10, TypeStop = 11, TypeHold = 12, TypeAttackMove = 13;
+        private const byte TypeMove = 1, TypeBuild = 2, TypeQueue = 3, TypeCancel = 4, TypeRally = 5, TypeAttack = 6, TypeCancelBuild = 7, TypeUpgradeBase = 8, TypeResearch = 9, TypeSurrender = 10, TypeStop = 11, TypeHold = 12, TypeAttackMove = 13, TypeUpgradeBuilding = 14;
 
         // ---------------------------------------------------------------- one command
 
@@ -91,6 +91,11 @@ namespace SimCore
                     w.WriteByte((byte)b.Kind);
                     w.WriteI32(b.X);
                     w.WriteI32(b.Y);
+                    w.WriteByte((byte)(b.Facing < 0 ? 255 : b.Facing));
+                    break;
+                case UpgradeBuildingCommand ub:
+                    w.WriteByte(TypeUpgradeBuilding);
+                    w.WriteI32(ub.BuildingId);
                     break;
                 case QueueUnitCommand q:
                     w.WriteByte(TypeQueue);
@@ -170,7 +175,14 @@ namespace SimCore
                     {
                         if (!r.TryReadByte(out byte kind) || !IsDefined<BuildingKind>(kind)) return false;
                         if (!r.TryReadI32(out int x) || !r.TryReadI32(out int y) || !InRange(x) || !InRange(y)) return false;
-                        command = new BuildCommand((BuildingKind)kind, x, y);
+                        if (!r.TryReadByte(out byte facing) || (facing > 3 && facing != 255)) return false;
+                        command = new BuildCommand((BuildingKind)kind, x, y, facing == 255 ? -1 : facing);
+                        return true;
+                    }
+                case TypeUpgradeBuilding:
+                    {
+                        if (!r.TryReadI32(out int id)) return false;
+                        command = new UpgradeBuildingCommand(id);
                         return true;
                     }
                 case TypeQueue:
