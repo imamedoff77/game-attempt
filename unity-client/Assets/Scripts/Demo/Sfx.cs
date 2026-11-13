@@ -13,6 +13,7 @@ public static class Sfx
     private static AudioSource[] _voices;
     private static int _next;
     private static AudioSource _music;
+    private static AudioClip _menuMusic, _battleMusic;
     private static readonly Dictionary<string, AudioClip[]> Clips = new Dictionary<string, AudioClip[]>();
     private static readonly Dictionary<string, float> LastPlayed = new Dictionary<string, float>();
     private static bool _enabled = true;
@@ -52,12 +53,23 @@ public static class Sfx
         Load("victory", "victory");
         Load("defeat", "defeat");
         Load("alarm", "alarm");
+        Load("mg", "mg0", "mg1");
+        Load("sniper", "sniper");
+        Load("impact", "impact");
+        Load("select", "select");
+        Load("order_move", "order_move");
+        Load("order_attack", "order_attack");
+        Load("error", "error");
+        Load("built", "built");
+        Load("upgrade", "upgrade");
+        Load("queued", "queued");
 
-        AudioClip music = Resources.Load<AudioClip>("Audio/music");
-        if (music != null)
+        _menuMusic = Resources.Load<AudioClip>("Audio/music");
+        _battleMusic = Resources.Load<AudioClip>("Audio/music_battle");
+        if (_menuMusic != null)
         {
             _music = parent.gameObject.AddComponent<AudioSource>();
-            _music.clip = music;
+            _music.clip = _menuMusic;
             _music.loop = true;
             _music.volume = 0.28f;
             _music.playOnAwake = false;
@@ -76,6 +88,15 @@ public static class Sfx
             else Debug.LogWarning("[Sfx] missing clip " + f);
         }
         Clips[name] = list.ToArray();
+    }
+
+    /// <summary>Calm pad in the menus, drums and a driving bass during a match.</summary>
+    public static void SetBattleMusic(bool battle)
+    {
+        AudioClip want = battle && _battleMusic != null ? _battleMusic : _menuMusic;
+        if (_music == null || want == null || _music.clip == want) return;
+        _music.clip = want;
+        _music.Play();
     }
 
     /// <summary>Music is a little quieter while playing than in the menu.</summary>

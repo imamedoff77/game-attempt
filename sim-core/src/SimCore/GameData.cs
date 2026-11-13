@@ -119,7 +119,7 @@ namespace SimCore
             int cost = o.Int("cost", 0, 1000000);
             int buildSeconds = o.Int("buildSeconds", 1, 3600);
             int pop = o.Int("pop", 1, 100);
-            int radiusMilli = o.Int("radiusMilli", 100, 900);
+            int radiusMilli = o.Int("radiusMilli", 100, 1500);
             int requiredLevel = o.IntOr("requiredLevel", 1, 1, 10);
             BuildingKind producer = o.Enum<BuildingKind>("producer");
             int hp = o.Int("hp", 1, 1000000);

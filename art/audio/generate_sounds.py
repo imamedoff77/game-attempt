@@ -154,6 +154,97 @@ def alarm():
     return norm(np.concatenate(out), 0.6)
 
 
+
+def bandpass(x, lo, hi):
+    return lowpass(x, hi) - lowpass(x, lo)
+
+
+def echo(x, delay, gain, repeats=3):
+    """A few quiet repeats: the sound rolling over open ground."""
+    out = np.concatenate([x, np.zeros(int(SR * delay * repeats))])
+    for k in range(1, repeats + 1):
+        s = int(SR * delay * k)
+        out[s:s + len(x)] += x * gain ** k
+    return out
+
+
+def mg(seed):
+    """A short machine-gun burst (jeep, armoured car): three tight, lighter cracks."""
+    shots = []
+    for k in range(3):
+        d = 0.07
+        crack = lowpass(noise(d, seed * 10 + k), 5000) * decay(d, 0.01)
+        thump = tone(d, 190, 0.02)
+        shots.append(fade(norm(crack * 0.9 + thump * 0.5), 2))
+        shots.append(np.zeros(int(SR * 0.045)))
+    return norm(np.concatenate(shots), 0.8)
+
+
+def sniper():
+    """One heavy crack with a long echo: it should sound different from every rifle."""
+    d = 0.35
+    crack = highpass(noise(d, 71), 1800) * decay(d, 0.008)
+    body = lowpass(noise(d, 72), 900) * decay(d, 0.06)
+    boom = sweep(d, 160, 50) * decay(d, 0.07)
+    shot = fade(norm(crack * 0.9 + body * 0.7 + boom * 0.8), 2)
+    return norm(echo(shot, 0.16, 0.38, 3), 0.9)
+
+
+def impact():
+    """Bullet hitting something: a dry little tick."""
+    d = 0.06
+    return fade(norm(bandpass(noise(d, 81), 500, 3500) * decay(d, 0.012) + tone(d, 260, 0.01) * 0.5), 2) * 0.8
+
+
+def select():
+    """A short radio squelch and blip: 'unit ready'."""
+    sq = bandpass(noise(0.05, 91), 1200, 3800) * decay(0.05, 0.02) * 0.5
+    blip = tone(0.07, 1250, 0.03)
+    return norm(np.concatenate([fade(sq, 2), fade(blip, 2)]), 0.55)
+
+
+def order_move():
+    """Two quick rising chirps: 'moving out'."""
+    a = tone(0.05, 980, 0.03)
+    b = tone(0.07, 1320, 0.035)
+    return norm(np.concatenate([fade(a, 2), np.zeros(int(SR * 0.02)), fade(b, 2)]), 0.5)
+
+
+def order_attack():
+    """A lower, harder double pulse with a squelch: 'attacking'."""
+    a = tone(0.06, 640, 0.04) + 0.4 * tone(0.06, 1280, 0.02)
+    sq = bandpass(noise(0.05, 95), 1500, 4000) * decay(0.05, 0.02) * 0.4
+    return norm(np.concatenate([fade(a, 2), np.zeros(int(SR * 0.025)), fade(a, 2), fade(sq, 2)]), 0.6)
+
+
+def error():
+    """Low buzz: this cannot be done."""
+    d = 0.22
+    return norm(fade(lowpass(saw(110, d, 12) * np.where((tt(d) % 0.11) < 0.07, 1, 0.2), 1800) * decay(d, 0.25), 3), 0.55)
+
+
+def built():
+    """Metal clank and a warm chime: a building is finished."""
+    clank = highpass(noise(0.12, 101), 1500) * decay(0.12, 0.02) + tone(0.12, 300, 0.05)
+    chime = tone(0.5, 660, 0.18) + 0.4 * tone(0.5, 990, 0.12) + 0.2 * tone(0.5, 1320, 0.08)
+    return norm(np.concatenate([fade(norm(clank, 0.8), 2), fade(chime, 4)]), 0.65)
+
+
+def upgrade():
+    """Four rising notes with a bright ending: a level gained."""
+    out = np.zeros(int(SR * 1.0))
+    for m, start, d in ((60, 0.0, 0.25), (64, 0.1, 0.25), (67, 0.2, 0.25), (72, 0.32, 0.65)):
+        n = lowpass(saw(midi(m), d, 6) * decay(d, d * 0.45), 3500)
+        sidx = int(SR * start)
+        out[sidx:sidx + len(n)] += n
+    return fade(norm(out, 0.6), 6)
+
+
+def queued():
+    """A soft mechanical tick: an order was added to the training queue."""
+    return fade(norm(tone(0.05, 900, 0.015) + highpass(noise(0.05, 111), 3000) * decay(0.05, 0.005) * 0.3, 0.5), 2)
+
+
 # ---------------------------------------------------------------- music
 
 def music():
@@ -193,6 +284,53 @@ def music():
     return norm(loop, 0.6)
 
 
+def music_battle():
+    """Tense war loop, 40 seconds at 96 bpm: marching drums, a driving low pulse and a thin string pad (Am, F, C, G)."""
+    bpm = 96
+    beat = 60.0 / bpm
+    bars = 16
+    total = beat * 4 * bars
+    n = int(SR * total)
+    out = np.zeros(n)
+
+    def put(sig, at):
+        i = int(SR * at)
+        j = min(i + len(sig), n)
+        if i < n:
+            out[i:j] += sig[:j - i]
+
+    kick = sweep(0.3, 130, 42) * decay(0.3, 0.09)
+    snare = (bandpass(noise(0.25, 121), 400, 5000) * decay(0.25, 0.06) + tone(0.25, 190, 0.05) * 0.5)
+    hat = highpass(noise(0.05, 122), 6000) * decay(0.05, 0.012)
+    roots = [45, 41, 48, 43]
+    for bar in range(bars):
+        t0 = bar * 4 * beat
+        chord = bar // 4 % 4
+        for b in range(4):
+            if b in (0, 2):
+                put(kick * 0.9, t0 + b * beat)
+            if b in (1, 3):
+                put(snare * 0.7, t0 + b * beat)
+        for e in range(8):
+            put(hat * (0.35 if e % 2 else 0.2), t0 + e * beat / 2)
+        # driving eighth-note bass
+        for e in range(8):
+            note = midi(roots[chord] - 12 + (7 if e % 4 == 3 else 0))
+            d = beat / 2 * 0.9
+            put(lowpass(saw(note, d, 8), 700) * decay(d, d * 0.7) * 0.5, t0 + e * beat / 2)
+    # thin pad following the chords
+    chords = [(57, 60, 64), (53, 57, 60), (55, 60, 64), (55, 59, 62)]
+    seg = beat * 16
+    for c, notes in enumerate(chords):
+        t_seg = tt(seg)
+        pad = np.zeros(len(t_seg))
+        for m in notes:
+            pad += saw(midi(m), seg, 6) * 0.25
+        pad = lowpass(pad, 1400) * np.minimum(t_seg / 2.0, 1) * np.minimum((seg - t_seg) / 2.0, 1)
+        put(pad * 0.5, c * seg)
+    return norm(out, 0.6)
+
+
 def main():
     folder = sys.argv[1] if len(sys.argv) > 1 else "."
     os.makedirs(folder, exist_ok=True)
@@ -209,6 +347,18 @@ def main():
     write(folder, "defeat", defeat())
     write(folder, "alarm", alarm())
     write(folder, "music", music())
+    write(folder, "music_battle", music_battle())
+    for i in range(2):
+        write(folder, f"mg{i}", mg(i + 1))
+    write(folder, "sniper", sniper())
+    write(folder, "impact", impact())
+    write(folder, "select", select())
+    write(folder, "order_move", order_move())
+    write(folder, "order_attack", order_attack())
+    write(folder, "error", error())
+    write(folder, "built", built())
+    write(folder, "upgrade", upgrade())
+    write(folder, "queued", queued())
 
 
 if __name__ == "__main__":

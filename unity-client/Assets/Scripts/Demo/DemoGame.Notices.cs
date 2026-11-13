@@ -68,13 +68,16 @@ public sealed partial class DemoGame
             _noticeBuildings[b.Id] = (b.Team, b.Kind, centre);
             if (b.Team != LocalTeam) continue;
             if (_noticeLevels.TryGetValue(b.Id, out int knownLevel) && b.Level > knownLevel)
+            {
                 Notify(NoticeKind.Good, Strings.Get("notice.factoryUp", Strings.BuildingName(b.Kind), b.Level), centre);
+                Sfx.Play("upgrade", 0.6f, 0f);
+            }
             _noticeLevels[b.Id] = b.Level;
             if (b.UnderConstruction) _noticeConstructing.Add(b.Id);
             else if (_noticeConstructing.Remove(b.Id))
             {
                 Notify(NoticeKind.Good, Strings.Get("notice.built", Strings.BuildingName(b.Kind)), centre);
-                Sfx.Play("ready", 0.5f, 0f);
+                Sfx.Play("built", 0.6f, 0f);
             }
         }
         _removeNoticeBuffer.Clear();
@@ -89,7 +92,11 @@ public sealed partial class DemoGame
         }
 
         // Base level and research.
-        if (me.BaseLevel > _noticeBaseLevel) Notify(NoticeKind.Good, Strings.Get("notice.baseUp", me.BaseLevel));
+        if (me.BaseLevel > _noticeBaseLevel)
+        {
+            Notify(NoticeKind.Good, Strings.Get("notice.baseUp", me.BaseLevel));
+            Sfx.Play("upgrade", 0.7f, 0f);
+        }
         _noticeBaseLevel = me.BaseLevel;
         for (int k = 0; k < Defs.UpgradeCount && k < _noticeTiers.Length; k++)
         {

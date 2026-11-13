@@ -64,6 +64,26 @@ public class MovementTests
     }
 
     [Fact]
+    public void MixedArmy_OrderedToOnePoint_KeepsEveryBodyApart()
+    {
+        var w = new World(new MapGrid(60, 60));
+        var ids = new List<int>();
+        for (int i = 0; i < 16; i++) ids.Add(w.SpawnUnit(UnitKind.Rifleman, P(5 + i % 8, 5 + i / 8)).Id);
+        for (int i = 0; i < 6; i++) ids.Add(w.SpawnUnit(UnitKind.Tank, P(5 + i * 2, 10)).Id);
+        for (int i = 0; i < 4; i++) ids.Add(w.SpawnUnit(UnitKind.Jeep, P(6 + i * 2, 13)).Id);
+        w.Enqueue(new MoveCommand(ids.ToArray(), P(40, 40)));
+
+        double worst = double.MaxValue;
+        for (int i = 0; i < 60 * World.TicksPerSecond; i++)
+        {
+            w.Step();
+            if (i > 5 * World.TicksPerSecond) worst = System.Math.Min(worst, WorstOverlap(w));
+        }
+        Assert.True(worst > -0.3, "worst overlap " + worst);
+        _output.WriteLine("worst overlap " + worst);
+    }
+
+    [Fact]
     public void FortyUnits_PassANarrowGap_AndAllArrive()
     {
         var map = new MapGrid(60, 30);

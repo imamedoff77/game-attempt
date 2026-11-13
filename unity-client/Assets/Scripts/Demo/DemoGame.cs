@@ -329,6 +329,7 @@ public sealed partial class DemoGame : MonoBehaviour
     private void BeginPlay()
     {
         Sfx.SetMusicVolume(0.2f);
+        Sfx.SetBattleMusic(true);
         Paused = false;
         SimSpeed = 1f;
         _accumulator = 0f;
@@ -347,6 +348,7 @@ public sealed partial class DemoGame : MonoBehaviour
         ClearSelection();
         Mode = GameMode.Menu;
         Sfx.SetMusicVolume(0.28f);
+        Sfx.SetBattleMusic(false);
     }
 
     public void Surrender()
@@ -471,7 +473,7 @@ public sealed partial class DemoGame : MonoBehaviour
                 {
                     _views[unit.Id] = UnitView.Create(unit, UnitModel(unit.Kind),
                         unit.Team != LocalTeam ? _enemyPalette : paletteMaterial, ringMaterial, _arcMaterial, unit.Team != LocalTeam ? _teamDiscEnemy : _teamDiscMine,
-                        IsBorrowed(unit.Kind) ? BorrowedScale(unit.Kind) : Vector3.one * 1.25f);
+                        IsBorrowed(unit.Kind) ? BorrowedScale(unit.Kind) : Vector3.one * (Defs.Unit(unit.Kind).Class == UnitClass.Infantry ? 1.5f : 1.0f));
                     if (_countStats && unit.Team == LocalTeam) { UnitsBuilt++; Sfx.Play("ready", 0.5f, 0.03f, 0.3f); }
                 }
 
@@ -719,9 +721,15 @@ public sealed partial class DemoGame : MonoBehaviour
         {
             case UnitKind.Tank: Sfx.PlayAt(at, "cannon", 0.8f, 0.08f); break;
             case UnitKind.RocketTrooper: Sfx.PlayAt(at, "rocket", 0.7f, 0.1f); break;
-            case UnitKind.Sniper: Sfx.PlayAt(at, "rifle", 0.9f, 0.1f); break;
+            case UnitKind.Sniper: Sfx.PlayAt(at, "sniper", 0.9f, 0.1f); break;
+            case UnitKind.Jeep:
+            case UnitKind.ArmoredCar: Sfx.PlayAt(at, "mg", 0.55f, 0.12f); break;
             default: Sfx.PlayAt(at, "rifle", 0.5f, 0.05f); break;
         }
+        // The hit itself, where the shot lands: a shell bursts, a bullet ticks.
+        Vector3 hit = UnitView.ToUnity(shot.To);
+        if (shot.Kind == UnitKind.Tank || shot.Kind == UnitKind.RocketTrooper) Sfx.PlayAt(hit, "explosion_small", 0.3f, 0.2f);
+        else Sfx.PlayAt(hit, "impact", 0.35f, 0.07f);
     }
 
     private bool _outcomeSoundPlayed;
@@ -817,6 +825,7 @@ public sealed partial class DemoGame : MonoBehaviour
                 var moveIds = new int[_selected.Count];
                 _selected.CopyTo(moveIds);
                 Issue(new AttackMoveCommand(moveIds, ToVec2(spot)));
+                Sfx.Play("order_attack", 0.6f, 0.03f, 0.12f);
                 TapMarker.Spawn(spot, markerMaterial);
             }
             return;
@@ -885,6 +894,7 @@ public sealed partial class DemoGame : MonoBehaviour
             {
                 _selected.Clear();
                 _selected.Add(unitId);
+                Sfx.Play("select", 0.6f, 0.04f, 0.1f);
             }
             return;
         }
@@ -913,6 +923,7 @@ public sealed partial class DemoGame : MonoBehaviour
         _selectedBuilding = null;
         _selected.Clear();
         foreach (int id in found) _selected.Add(id);
+        Sfx.Play("select", 0.6f, 0.04f, 0.1f);
     }
 
     public void OrderStop()
@@ -958,6 +969,7 @@ public sealed partial class DemoGame : MonoBehaviour
             Vector3 sp = Cam.Camera.WorldToScreenPoint(view.transform.position);
             if (sp.z > 0f && screenRect.Contains(sp)) _selected.Add(view.UnitId);
         }
+        if (_selected.Count > 0) Sfx.Play("select", 0.6f, 0.04f, 0.1f);
     }
 
     public void SelectAll()
@@ -966,6 +978,7 @@ public sealed partial class DemoGame : MonoBehaviour
         _selected.Clear();
         foreach (UnitView view in _views.Values)
             if (view.Team == LocalTeam) _selected.Add(view.UnitId);
+        if (_selected.Count > 0) Sfx.Play("select", 0.6f, 0.04f, 0.1f);
     }
 
     public void DeselectBuilding() { _selectedBuilding = null; SettingRally = false; }
@@ -1007,11 +1020,15 @@ public sealed partial class DemoGame : MonoBehaviour
 
     public void QueueUnit(UnitKind kind)
     {
-        if (_selectedBuilding != null) Issue(new QueueUnitCommand(_selectedBuilding.Id, kind));
+        if (_selectedBuilding != null) { Issue(new QueueUnitCommand(_selectedBuilding.Id, kind)); Sfx.Play("queued", 0.6f, 0.03f, 0.05f); }
     }
 
     /// <summary>Orders a unit without choosing the building: the least busy one that can make it takes the order.</summary>
-    public void QueueAnywhere(UnitKind kind) => Issue(new QueueUnitCommand(QueueUnitCommand.AnyBuilding, kind));
+    public void QueueAnywhere(UnitKind kind)
+    {
+        Issue(new QueueUnitCommand(QueueUnitCommand.AnyBuilding, kind));
+        Sfx.Play("queued", 0.6f, 0.03f, 0.05f);
+    }
 
     /// <summary>Raises the selected factory to its next level.</summary>
     public void UpgradeSelectedBuilding()
@@ -1203,6 +1220,7 @@ public sealed partial class DemoGame : MonoBehaviour
         var ids = new int[_selected.Count];
         _selected.CopyTo(ids);
         Issue(new MoveCommand(ids, target));
+        Sfx.Play("order_move", 0.6f, 0.03f, 0.12f);
 
         TapMarker.Spawn(ground, markerMaterial);
     }
@@ -1212,6 +1230,7 @@ public sealed partial class DemoGame : MonoBehaviour
         var ids = new int[_selected.Count];
         _selected.CopyTo(ids);
         Issue(new AttackCommand(ids, kind, targetId));
+        Sfx.Play("order_attack", 0.6f, 0.03f, 0.12f);
         _lastAttackKind = kind;
         _lastAttackId = targetId;
         _lastAttackTime = Time.unscaledTime;

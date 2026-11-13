@@ -32,7 +32,11 @@ public sealed partial class DemoHud
         // A disabled card is a plain plate: GUI.enabled would wash it out at half alpha.
         bool clicked = false;
         if (enabled) clicked = GUI.Button(r, "", _button);
-        else GUI.Box(r, "");
+        else
+        {
+            GUI.Box(r, "");
+            if (Event.current.type == EventType.MouseDown && r.Contains(Event.current.mousePosition)) Sfx.Play("error", 0.6f, 0.02f, 0.25f);
+        }
         float a = enabled ? 1f : 0.8f;
         float pad = r.height * 0.07f;
         float rowH = r.height * 0.2f;
