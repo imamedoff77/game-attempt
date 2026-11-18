@@ -33,6 +33,9 @@ namespace SimCore
         /// <summary>True while the building is still being built: it uses no energy, produces nothing and gives no income.</summary>
         public bool UnderConstruction => BuildProgress < ConstructionTicks;
 
+        /// <summary>Order in which finished buildings get energy: the oldest first, so a shortage stops the newest ones.</summary>
+        internal int PowerOrder;
+
         /// <summary>False while the base lacks the energy to run this building.</summary>
         public bool Powered { get; internal set; } = true;
 

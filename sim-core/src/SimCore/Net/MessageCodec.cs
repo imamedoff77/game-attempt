@@ -20,7 +20,7 @@ namespace SimCore
         public const int MaxCodeLength = 8;
 
         /// <summary>Raised whenever the wire format changes; the server refuses clients with another number.</summary>
-        public const int ProtocolVersion = 7;
+        public const int ProtocolVersion = 8;
         public const int MaxAuthTokenLength = 128;
 
         public static byte[] Encode(NetMessage message)

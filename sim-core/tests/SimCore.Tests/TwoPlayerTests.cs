@@ -81,10 +81,12 @@ public class TwoPlayerTests
     {
         var (w, _, rxA, _, rxB) = NewMatch();
         // Team A builds supply centers until it is short of energy (each needs 20): 140 capacity, barracks uses 30.
-        for (int i = 0; i < 6; i++) w.PlaceBuilding(BuildingKind.SupplyCenter, 20 + i * 4, 30, A);
+        Building last = null;
+        for (int i = 0; i < 6; i++) last = w.PlaceBuilding(BuildingKind.SupplyCenter, 20 + i * 4, 30, A);
         Assert.True(w.Player(A).EnergyShortage);
         Assert.False(w.Player(B).EnergyShortage);
-        Assert.False(rxA.Powered);
+        Assert.False(last.Powered); // only the newest building, the one that no longer fits, stops
+        Assert.True(rxA.Powered);   // the older ones keep working
         Assert.True(rxB.Powered);
     }
 

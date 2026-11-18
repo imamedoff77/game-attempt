@@ -20,7 +20,7 @@
 
   "hud.baseLevel": "Base level {0}",
   "hud.caption": "+{0}/min  -  base level {1}",
-  "hud.energyShortage": "POWER SHORTAGE: buildings are offline",
+  "hud.energyShortage": "POWER SHORTAGE: the newest buildings are offline",
   "hud.upgrading": "Upgrading base: {0}%",
 
   "menu.build": "Build",
@@ -33,7 +33,7 @@
   "notice.lost": "{0} destroyed",
   "notice.baseUp": "Base upgraded to level {0}",
   "notice.research": "Research complete: {0}",
-  "notice.power": "Power shortage: buildings offline",
+  "notice.power": "Power shortage: build a power plant",
   "hub.campaignSub": "Story missions against a hard-pressed enemy",
   "hub.vsSub": "A skirmish against the computer",
   "hub.onlineSub": "Ranked 1v1 against real players",

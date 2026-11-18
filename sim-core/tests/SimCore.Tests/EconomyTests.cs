@@ -83,9 +83,31 @@ public class EconomyTests
         Assert.Equal(Economy.HqIncomePerMinute, w2.IncomePerMinute);
 
         Building s2 = w2.PlaceBuilding(BuildingKind.SupplyCenter, 30, 10);
-        Assert.False(s2.Powered);
-        Assert.Equal(Economy.HqIncomePerMinute, w2.IncomePerMinute); // supply center gives nothing while unpowered
+        Assert.True(s2.Powered); // the 20 energy of the base still fit it: only what does not fit stops
+        Building s3 = w2.PlaceBuilding(BuildingKind.SupplyCenter, 34, 10);
+        Assert.False(s3.Powered);
+        Assert.Equal(Economy.HqIncomePerMinute + s2.Output, w2.IncomePerMinute); // an unpowered supply center gives nothing
         Assert.True(power.Powered);
+    }
+
+    [Fact]
+    public void Shortage_StopsOnlyTheNewestBuilding_NotTheOldOnes()
+    {
+        World w = NewWorld(); // base 20 + power plant 120 = 140
+        w.PlaceBuilding(BuildingKind.PowerPlant, 30, 10);
+        Building barracks = w.PlaceBuilding(BuildingKind.Barracks, 20, 10);          // 30
+        Building factory = w.PlaceBuilding(BuildingKind.VehicleFactory, 20, 20);     // 50
+        Building supplyA = w.PlaceBuilding(BuildingKind.SupplyCenter, 34, 20);       // 20
+        Building supplyB = w.PlaceBuilding(BuildingKind.SupplyCenter, 38, 20);       // 20 -> 120 used
+        Assert.False(w.EnergyShortage);
+        Assert.True(barracks.Powered && factory.Powered && supplyA.Powered && supplyB.Powered);
+
+        Building supplyC = w.PlaceBuilding(BuildingKind.SupplyCenter, 42, 20);       // 140 used: still fits
+        Building tower = w.PlaceBuilding(BuildingKind.Tower, 46, 20);                // 160 used: this one does not fit
+        Assert.True(w.EnergyShortage);
+        Assert.True(supplyC.Powered);
+        Assert.False(tower.Powered);                                                 // only the newest building stops
+        Assert.True(barracks.Powered && factory.Powered && supplyA.Powered && supplyB.Powered);
     }
 
     [Fact]

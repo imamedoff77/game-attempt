@@ -143,8 +143,8 @@ public class NewContentTests
         var w = new World(Fix64.FromInt(64), Fix64.FromInt(64));
         w.PlaceBuilding(BuildingKind.Hq, 10, 10, 0);
         w.PlaceBuilding(BuildingKind.Hq, 50, 50, 1);
-        w.PlaceBuilding(BuildingKind.Barracks, 20, 10, 0); // takes 30 of the HQ's 20 energy
-        w.PlaceBuilding(BuildingKind.Tower, 30, 30, 0);
+        w.PlaceBuilding(BuildingKind.SupplyCenter, 20, 10, 0); // takes all 20 of the HQ's energy
+        w.PlaceBuilding(BuildingKind.Tower, 30, 30, 0);       // the newest building: no energy left for it
         Assert.True(w.Player(0).EnergyShortage);
         Unit enemy = w.SpawnUnit(UnitKind.Tank, P(35, 31), 1);
         Run(w, 5);

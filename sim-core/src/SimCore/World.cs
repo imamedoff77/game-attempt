@@ -134,6 +134,7 @@ namespace SimCore
                     Map.SetBuilding(cx, cy, building.Id);
 
             building.Phase = _buildingsPlaced[team & 1]++;
+            building.PowerOrder = _nextPowerOrder++;
             _buildings.Add(building);
             UpdateEconomy(team);
             return building;
@@ -165,6 +166,9 @@ namespace SimCore
             return Economy.Pick(kind == BuildingKind.PowerPlant ? Economy.PowerPlantOutput : Economy.SupplyCenterIncome, existing);
         }
 
+        private int _nextPowerOrder;
+        private readonly List<Building> _powerBuffer = new List<Building>();
+
         /// <summary>Recomputes one team's energy balance, which of its buildings work, and its income.</summary>
         private void UpdateEconomy(int team)
         {
@@ -179,14 +183,28 @@ namespace SimCore
             p.EnergyCapacity = capacity;
             p.EnergyUsed = used;
 
-            int income = Economy.HqIncomeAt(p.BaseLevel);
+            // Energy goes to the oldest finished buildings first: in a shortage only the newest ones that no longer fit stop,
+            // not the whole base.
+            _powerBuffer.Clear();
             foreach (Building b in _buildings)
             {
                 if (b.Team != team) continue;
-                // Demo rule: in a shortage every building that needs energy stops.
-                b.Powered = b.UnderConstruction || !p.EnergyShortage || Defs.Building(b.Kind).EnergyUse == 0;
-                if (b.Kind == BuildingKind.SupplyCenter && b.Powered) income += b.Output;
+                if (b.UnderConstruction || Defs.Building(b.Kind).EnergyUse == 0) { b.Powered = true; continue; }
+                int at = _powerBuffer.Count;
+                while (at > 0 && _powerBuffer[at - 1].PowerOrder > b.PowerOrder) at--;
+                _powerBuffer.Insert(at, b);
             }
+            int left = capacity;
+            foreach (Building b in _powerBuffer)
+            {
+                int use = Defs.Building(b.Kind).EnergyUse;
+                b.Powered = use <= left;
+                if (b.Powered) left -= use;
+            }
+
+            int income = Economy.HqIncomeAt(p.BaseLevel);
+            foreach (Building b in _buildings)
+                if (b.Team == team && b.Kind == BuildingKind.SupplyCenter && b.Powered) income += b.Output;
             p.IncomePerMinute = income;
         }
 
@@ -725,7 +743,11 @@ namespace SimCore
                 int remaining = b.MaxHp - start;
                 b.Hp += remaining * (b.BuildProgress + 1) / b.ConstructionTicks - remaining * b.BuildProgress / b.ConstructionTicks;
                 b.BuildProgress++;
-                if (!b.UnderConstruction) UpdateEconomy(b.Team); // now it needs energy and may give some
+                if (!b.UnderConstruction)
+                {
+                    b.PowerOrder = _nextPowerOrder++; // it joins the queue for energy behind everything already finished
+                    UpdateEconomy(b.Team); // now it needs energy and may give some
+                }
             }
             foreach (PlayerState p in _players)
             {
